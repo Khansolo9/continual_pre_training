@@ -1,0 +1,18 @@
+# Method Rankings
+
+Rankings across key dimensions for RQ2 method comparison runs.
+
+| Category                                     |   Rank | Method   | Value   | vs Baseline   |
+|:---------------------------------------------|-------:|:---------|:--------|:--------------|
+| Best Retention (Lowest Forgetting)           |      1 | mer25    | 4.47%   | -82.53%       |
+| Best Retention (Lowest Forgetting)           |      2 | replay25 | 7.48%   | -79.52%       |
+| Best Retention (Lowest Forgetting)           |      3 | ewc      | 33.44%  | -53.55%       |
+| Best B Adaptation (Lowest PPL_B)             |      1 | replay25 | 22.06   | +0.89         |
+| Best B Adaptation (Lowest PPL_B)             |      2 | ewc      | 22.08   | +0.90         |
+| Best B Adaptation (Lowest PPL_B)             |      3 | mer25    | 26.77   | +5.60         |
+| Best General Ability (Highest LAMBADA)       |      1 | ewc      | 0.246   | +0.058        |
+| Best General Ability (Highest LAMBADA)       |      2 | mer25    | 0.221   | +0.033        |
+| Best General Ability (Highest LAMBADA)       |      3 | replay25 | 0.207   | +0.019        |
+| Best Compute Efficiency (Highest Tokens/sec) |      1 | replay25 | 2996    | +146          |
+| Best Compute Efficiency (Highest Tokens/sec) |      2 | mer25    | 2927    | +77           |
+| Best Compute Efficiency (Highest Tokens/sec) |      3 | ewc      | 2799    | -51           |

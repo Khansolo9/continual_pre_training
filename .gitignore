@@ -1,0 +1,52 @@
+# --- Python / venv ---
+.cpt-env/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+ruff_cache/
+
+# --- OS ---
+.DS_Store
+
+# --- Secrets ---
+.env
+.env.*
+**/*token*
+**/*apikey*
+**/*api_key*
+**/*hf_token*
+
+# --- Data / model artifacts (keep out of git) ---
+data/processed/
+data/raw/
+data/cache/
+datasets/
+cache/
+outputs/
+checkpoints/
+*.pt
+**/*.pth
+**/*.safetensors
+data/
+
+# --- Generated analysis outputs (choose whether to include) ---
+# If you want to regenerate plots/tables via scripts, ignore outputs:
+# experiments/analysis/figures/**
+# experiments/analysis/tables/**
+
+# --- Logs ---
+*.log
+
+# --- claude ---
+*.claude/
+
+# --- misc --- 
+denario_project/
+docs/
+evidence/
+logs/
+CLAUDE.md
+notebooks/

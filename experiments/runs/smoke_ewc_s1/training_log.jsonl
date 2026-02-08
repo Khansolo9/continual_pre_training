@@ -1,0 +1,2 @@
+{"step": 10, "loss": 4.08466911315918, "avg_loss": 3.8842503786087037, "lr": 5e-06, "tokens_per_sec": 3135.629565656513, "elapsed_sec": 26.125535011291504, "domain": "domain_a"}
+{"step": 10, "loss": 4.117136001586914, "avg_loss": 4.044914674758911, "lr": 5e-06, "tokens_per_sec": 2765.8916632878954, "elapsed_sec": 29.617935180664062, "domain": "domain_b", "method": "ewc", "ewc_penalty": 1.073352564162633e-06}

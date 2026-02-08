@@ -1,0 +1,49 @@
+# EWC Configuration
+# Method: Elastic Weight Consolidation (Kirkpatrick2017)
+# Version: 1.1 (Implemented)
+# Target run: rq2_ewc_s42
+#
+# Implementation: src/cl_methods.py (EWC class)
+# - Computes diagonal Fisher Information after Domain A training
+# - Applies quadratic penalty: L = L_CE + (λ/2)Σ F_i(θ_i - θ*_i)²
+# - Per Kirkpatrick2017: "Overcoming catastrophic forgetting in neural networks"
+
+method: ewc
+method_params:
+  ewc_lambda: 100  # Regularization strength (λ in paper)
+  fisher_samples: 1000  # Samples for Fisher diagonal estimate
+  fisher_type: diagonal  # Only diagonal approximation implemented
+
+model:
+  name: gpt2
+  pretrained: true
+  gradient_checkpointing: true
+
+training:
+  domain_a:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+  domain_b:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+
+data:
+  sequence_length: 512
+  domain_a:
+    name: wikitext-103
+    tier: A-medium
+    tokens: 10000000
+  domain_b:
+    name: arxiv_abstracts
+    tier: B-medium
+    tokens: 10000000
+
+seed: 42

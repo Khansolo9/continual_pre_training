@@ -1,0 +1,50 @@
+# MER-lite Configuration
+# Method: Meta-Experience Replay with Reptile alignment (Abbes2025)
+# Version: 1.1 (Implemented)
+# Target run: rq2_mer25_s42
+#
+# Implementation: src/cl_methods.py (MER class + ReplayBuffer)
+# - Combines experience replay with Reptile meta-updates
+# - Every reptile_interval steps: θ ← θ_old + ε(θ - θ_old)
+# - Per Abbes2025: "Revisiting Replay and Gradient Alignment for CPT of LLMs"
+
+method: mer25
+method_params:
+  replay_rate: 0.25  # 25% replay ratio (same as mixing_ratio_replay)
+  buffer_size_pct: 10  # 10% of Domain A tokens
+  reptile_interval: 100  # Apply Reptile every k steps
+  reptile_epsilon: 0.1  # Interpolation coefficient (ε in paper)
+
+model:
+  name: gpt2
+  pretrained: true
+  gradient_checkpointing: true
+
+training:
+  domain_a:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+  domain_b:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+
+data:
+  sequence_length: 512
+  domain_a:
+    name: wikitext-103
+    tier: A-medium
+    tokens: 10000000
+  domain_b:
+    name: arxiv_abstracts
+    tier: B-medium
+    tokens: 10000000
+
+seed: 42

@@ -1,0 +1,48 @@
+# Replay-25% Configuration
+# Method: Experience replay with 25% replay ratio
+# Version: 1.1 (Implemented)
+# Target run: rq2_replay25_s42
+#
+# Implementation: src/cl_methods.py (ReplayBuffer, create_mixed_batch)
+# - Stores buffer_size_pct of Domain A tokens using reservoir sampling
+# - During Domain B, mixes mixing_ratio_replay from buffer into each batch
+# - Per Rolnick2019: "Experience Replay for Continual Learning"
+
+method: replay25
+method_params:
+  buffer_size_pct: 10  # 10% of Domain A tokens in buffer
+  mixing_ratio_replay: 0.25  # 25% of each batch is replay
+
+model:
+  name: gpt2
+  pretrained: true
+  gradient_checkpointing: true
+
+training:
+  domain_a:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+  domain_b:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+
+data:
+  sequence_length: 512
+  domain_a:
+    name: wikitext-103
+    tier: A-medium
+    tokens: 10000000
+  domain_b:
+    name: arxiv_abstracts
+    tier: B-medium
+    tokens: 10000000
+
+seed: 42

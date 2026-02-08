@@ -1,0 +1,88 @@
+# Baseline Configuration for Continual Pretraining
+# Method: Sequential fine-tuning (no mitigation)
+# Version: 1.0
+# Target run: pilot_baseline_s0, rq1_baseline_s42, rq1_baseline_s123
+
+method: baseline
+method_params: {}  # No method-specific parameters for baseline
+
+# Model
+model:
+  name: gpt2
+  pretrained: true
+  gradient_checkpointing: true  # Enable to reduce VRAM
+
+# Training hyperparameters
+training:
+  # Domain A (WikiText-103)
+  domain_a:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4  # Effective batch size = 16
+    max_steps: null  # Determined by token budget
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+
+  # Domain B (ArXiv abstracts)
+  domain_b:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    max_steps: null
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+
+# Data configuration
+data:
+  sequence_length: 512
+  domain_a:
+    name: wikitext-103
+    tier: A-medium
+    tokens: 10000000  # 10M tokens
+  domain_b:
+    name: arxiv_abstracts
+    tier: B-medium
+    tokens: 10000000  # 10M tokens
+
+# Evaluation configuration
+evaluation:
+  # Perplexity evaluation
+  ppl_batch_size: 8
+
+  # Generation for drift/quality metrics
+  drift:
+    promptset: prompts_drift_v1.json
+    max_new_tokens: 128
+    decoding_mode: deterministic
+    do_sample: false
+
+  quality:
+    promptset: prompts_quality_v1.json
+    max_new_tokens: 256
+    decoding_mode: sampling
+    do_sample: true
+    temperature: 0.7
+    top_p: 0.9
+    num_samples: 200
+
+# Checkpointing
+checkpointing:
+  save_after_domain_a: true
+  save_final: true
+  keep_only_required: true
+
+# Resource constraints (laptop feasibility)
+constraints:
+  max_vram_gb: 7.5
+  max_ram_gb: 16.0
+
+# Logging
+logging:
+  log_steps: 100
+  eval_steps: 500  # Eval PPL periodically during training
+  save_training_log: true
+
+# Seed (overridden per run)
+seed: 0
