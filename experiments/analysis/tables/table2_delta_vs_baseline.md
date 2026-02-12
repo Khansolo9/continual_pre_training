@@ -1,6 +1,6 @@
 # Delta Table vs Baseline Mean
 
-**Baseline mean computed from**: pilot_baseline_s0, rq1_baseline_s42, rq1_baseline_s123 (n=3)
+**Baseline mean computed from**: gpt2_pilot_baseline_s0, gpt2_rq1_baseline_s42, gpt2_rq1_baseline_s123 (n=3)
 **Baseline Forgetting**: 87.00% ± 0.34%
 
 *Negative delta = improvement for lower-is-better metrics (forgetting, PPL, rep, drift)*  

@@ -1,0 +1,21 @@
+# Llama 3.2 1B — Meta
+# HuggingFace: meta-llama/Llama-3.2-1B  (gated — requires HF token + license acceptance)
+
+model:
+  name: meta-llama/Llama-3.2-1B
+  family: llama3
+  params_m: 1000
+  dtype: bfloat16
+  pretrained: true
+  gradient_checkpointing: true
+  trust_remote_code: false
+
+# Override training defaults for 1B model VRAM budget
+training_overrides:
+  batch_size: 2
+  gradient_accumulation_steps: 8
+
+# Override evaluation defaults for MPS memory limits
+evaluation_overrides:
+  ppl_batch_size: 1
+  ppl_sequence_length: 512

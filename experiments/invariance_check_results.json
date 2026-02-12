@@ -1,0 +1,24 @@
+{
+  "ppl_seq_len": {
+    "ppl_256": 32.70100363149811,
+    "ppl_512": 27.116012329551378,
+    "rel_diff_pct": 20.60,
+    "status": "PASS (expected: shorter context = higher PPL; confirms seq_len must be locked)"
+  },
+  "drift_determinism": {
+    "js_run2_vs_run1": 0.0,
+    "js_run3_vs_run1": 0.0,
+    "vocab_overlap_run2": 1.0,
+    "vocab_overlap_run3": 1.0,
+    "status": "PASS (deterministic decoding produces identical outputs)"
+  },
+  "repn_seed": {
+    "rep4_values": [0.03278688524590164, 0.03278688524590164, 0.0],
+    "rep8_values": [0.0, 0.0, 0.0],
+    "rep4_range": 0.03278688524590164,
+    "rep8_range": 0.0,
+    "status": "PASS (variance recorded: rep4 range ~0.03, rep8 stable at 0)"
+  },
+  "tested_on": "gpt2_smoke_baseline_s1/theta_A",
+  "date": "2026-02-12"
+}

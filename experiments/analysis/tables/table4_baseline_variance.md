@@ -1,6 +1,6 @@
 # Baseline Variance Analysis
 
-**Baseline runs**: pilot_baseline_s0, rq1_baseline_s42, rq1_baseline_s123
+**Baseline runs**: gpt2_pilot_baseline_s0, gpt2_rq1_baseline_s42, gpt2_rq1_baseline_s123
 
 | Metric        | Mean   |      Std | Min    | Max    |   N |
 |:--------------|:-------|---------:|:-------|:-------|----:|

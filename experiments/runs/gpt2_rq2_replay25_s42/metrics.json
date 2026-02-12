@@ -1,0 +1,73 @@
+{
+  "run": {
+    "run_id": "gpt2_rq2_replay25_s42",
+    "research_question": "RQ1",
+    "method": "replay25",
+    "seed": 42,
+    "timestamp_start": "2026-02-06T22:37:03.465633Z",
+    "timestamp_end": "2026-02-07T01:36:38.160915Z",
+    "status": "completed",
+    "config_file": "configs/methods/replay25.yaml",
+    "runpack_file": "runpack_gpt2_rq2_replay25_s42.md"
+  },
+  "inputs": {
+    "domain_a_name": "wikitext-103",
+    "domain_b_name": "arxiv_abstracts",
+    "domain_a_token_tier": "A-medium",
+    "domain_b_token_tier": "B-medium",
+    "domain_a_tokens_used": 10000000,
+    "domain_b_tokens_used": 10000000,
+    "domain_a_id": "sha256:b8a88374cf6b4619",
+    "domain_b_id": "sha256:aa8881464afd8e23",
+    "prompts_drift_version": "prompts_drift_v1.json",
+    "prompts_quality_version": "prompts_quality_v1.json",
+    "prompts_toxicity_version": null,
+    "gen_drift_max_new_tokens": 128,
+    "gen_drift_decoding_mode": "deterministic",
+    "gen_drift_do_sample": false,
+    "gen_quality_max_new_tokens": 256,
+    "gen_quality_decoding_mode": "sampling",
+    "gen_quality_do_sample": true,
+    "gen_quality_temperature": 0.7,
+    "gen_quality_top_p": 0.9
+  },
+  "metrics": {
+    "ppl_a_init": 35.83166884437924,
+    "ppl_b_init": 49.03186117447547,
+    "ppl_a_before": 22.930296130147426,
+    "ppl_a_before_median_batch": 22.908157998203855,
+    "rep4_before": 0.46047430830039526,
+    "rep8_before": 0.321285140562249,
+    "lambada_before": 0.203,
+    "ppl_a_after": 24.64484926973618,
+    "ppl_a_after_median_batch": 24.45550408716085,
+    "ppl_b_after": 22.064429543529126,
+    "ppl_b_after_median_batch": 23.990136338505074,
+    "rep4_after": 0.41304347826086957,
+    "rep8_after": 0.26706827309236947,
+    "lambada_after": 0.207,
+    "drift_metric_name": "js_divergence",
+    "drift_value_before": 0.4207609279499479,
+    "drift_value_after": 0.3613287247537328,
+    "vocab_overlap_before": 0.24707996406109614,
+    "vocab_overlap_after": 0.25277777777777777,
+    "forgetting_pct": 7.477239412248846
+  },
+  "resources": {
+    "total_hours": 2.9929709116666667,
+    "domain_a_hours": 0.9090564583333334,
+    "domain_b_hours": 0.9446190555555556,
+    "peak_vram_gb": null,
+    "peak_ram_gb": 1.2188758850097656,
+    "avg_tokens_per_sec": 2996.4360158334594
+  },
+  "method_params": {
+    "buffer_size_pct": 10,
+    "mixing_ratio_replay": 0.25
+  },
+  "training_curves": null,
+  "anomalies": [
+    "high_rep4"
+  ],
+  "notes": "Pilot baseline run completed successfully."
+}

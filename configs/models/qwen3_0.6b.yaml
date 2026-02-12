@@ -1,0 +1,21 @@
+# Qwen3 0.6B — Alibaba
+# HuggingFace: Qwen/Qwen3-0.6B  (not gated)
+
+model:
+  name: Qwen/Qwen3-0.6B
+  family: qwen3
+  params_m: 600
+  dtype: bfloat16
+  pretrained: true
+  gradient_checkpointing: true
+  trust_remote_code: true     # Qwen models require trust_remote_code
+
+# Override training defaults for 0.6B model VRAM budget
+training_overrides:
+  batch_size: 2
+  gradient_accumulation_steps: 8
+
+# Uniform evaluation protocol across all models
+evaluation_overrides:
+  ppl_batch_size: 1
+  ppl_sequence_length: 512

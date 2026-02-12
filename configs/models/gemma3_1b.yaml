@@ -1,0 +1,21 @@
+# Gemma 3 1B — Google
+# HuggingFace: google/gemma-3-1b-pt  (gated — requires HF token + license acceptance)
+
+model:
+  name: google/gemma-3-1b-pt
+  family: gemma3
+  params_m: 1000
+  dtype: bfloat16
+  pretrained: true
+  gradient_checkpointing: true
+  trust_remote_code: false
+
+# Override training defaults for 1B model VRAM budget
+training_overrides:
+  batch_size: 2
+  gradient_accumulation_steps: 8
+
+# Override evaluation defaults for MPS memory limits (vocab_size=262144)
+evaluation_overrides:
+  ppl_batch_size: 1
+  ppl_sequence_length: 512

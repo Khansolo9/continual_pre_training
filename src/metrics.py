@@ -89,6 +89,11 @@ class MetricsComputer:
             batch_ppl = math.exp(loss.item())
             batch_ppls.append(batch_ppl)
 
+            # Free memory between batches (critical for large models on MPS)
+            del outputs, loss, input_ids
+            if self.device == "mps":
+                torch.mps.empty_cache()
+
         # Primary PPL: token-weighted mean NLL -> exp
         avg_nll = total_nll / total_tokens
         ppl_primary = math.exp(avg_nll)

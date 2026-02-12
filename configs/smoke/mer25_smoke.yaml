@@ -19,8 +19,12 @@ smoke_mode:
 
 model:
   name: gpt2
+  family: gpt2
+  params_m: 124
+  dtype: float32
   pretrained: true
   gradient_checkpointing: true
+  trust_remote_code: false
 
 training:
   domain_a:

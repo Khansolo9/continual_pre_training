@@ -25,12 +25,12 @@
 
 | Run ID | Method | Seed | Forgetting % | PPL(A) After | PPL(B) After | LAMBADA After | Rep-4 After | Drift (JS) | Total Hours | Avg Tok/s |
 |---|---|---|---|---|---|---|---|---|---|---|
-| pilot_baseline_s0 | baseline | 0 | 87.35% | 43.00 | 21.17 | 0.131 | 0.5810 | 0.3428 | 3.04h | 3045 |
-| rq1_baseline_s42 | baseline | 42 | 86.95% | 42.87 | 21.17 | 0.217 | 0.6206 | 0.3372 | 3.34h | 2644 |
-| rq1_baseline_s123 | baseline | 123 | 86.68% | 42.84 | 21.17 | 0.216 | 0.6324 | 0.3370 | 3.17h | 2861 |
-| rq2_replay25_s42 | replay25 | 42 | 7.48% | 24.64 | 22.06 | 0.207 | 0.4130 | 0.3613 | 2.99h | 2996 |
-| rq2_mer25_s42 | mer25 | 42 | 4.47% | 23.95 | 26.77 | 0.221 | 0.4664 | 0.3140 | 3.00h | 2927 |
-| rq2_ewc_s42 | ewc | 42 | 33.44% | 30.60 | 22.08 | 0.246 | 0.6206 | 0.3363 | 3.16h | 2799 |
+| gpt2_pilot_baseline_s0 | baseline | 0 | 87.35% | 43.00 | 21.17 | 0.131 | 0.5810 | 0.3428 | 3.04h | 3045 |
+| gpt2_rq1_baseline_s42 | baseline | 42 | 86.95% | 42.87 | 21.17 | 0.217 | 0.6206 | 0.3372 | 3.34h | 2644 |
+| gpt2_rq1_baseline_s123 | baseline | 123 | 86.68% | 42.84 | 21.17 | 0.216 | 0.6324 | 0.3370 | 3.17h | 2861 |
+| gpt2_rq2_replay25_s42 | replay25 | 42 | 7.48% | 24.64 | 22.06 | 0.207 | 0.4130 | 0.3613 | 2.99h | 2996 |
+| gpt2_rq2_mer25_s42 | mer25 | 42 | 4.47% | 23.95 | 26.77 | 0.221 | 0.4664 | 0.3140 | 3.00h | 2927 |
+| gpt2_rq2_ewc_s42 | ewc | 42 | 33.44% | 30.60 | 22.08 | 0.246 | 0.6206 | 0.3363 | 3.16h | 2799 |
 
 ---
 
@@ -90,68 +90,68 @@
 
 | Anomaly | Count | Affected Runs |
 |---------|-------|---------------|
-| high_rep4 | 6 | pilot_baseline_s0, rq1_baseline_s42, rq1_baseline_s123, rq2_replay25_s42, rq2_mer25_s42 (+1 more) |
+| high_rep4 | 6 | gpt2_pilot_baseline_s0, gpt2_rq1_baseline_s42, gpt2_rq1_baseline_s123, gpt2_rq2_replay25_s42, gpt2_rq2_mer25_s42 (+1 more) |
 
 ---
 
 ## Appendix: Artifact Paths
 
-### pilot_baseline_s0
+### gpt2_pilot_baseline_s0
 
-- **Metrics**: `experiments/runs/pilot_baseline_s0/metrics.json`
-- **Runpack**: `experiments/runs/pilot_baseline_s0/runpack_pilot_baseline_s0.md`
-- **Config**: `experiments/runs/pilot_baseline_s0/config.yaml`
+- **Metrics**: `experiments/runs/gpt2_pilot_baseline_s0/metrics.json`
+- **Runpack**: `experiments/runs/gpt2_pilot_baseline_s0/runpack_gpt2_pilot_baseline_s0.md`
+- **Config**: `experiments/runs/gpt2_pilot_baseline_s0/config.yaml`
 - **Checkpoints**:
-  - `experiments/runs/pilot_baseline_s0/checkpoints/theta_A.pt`
-  - `experiments/runs/pilot_baseline_s0/checkpoints/theta_AB.pt`
-- **Training Log**: `experiments/runs/pilot_baseline_s0/training_log.jsonl`
+  - `experiments/runs/gpt2_pilot_baseline_s0/checkpoints/theta_A.pt`
+  - `experiments/runs/gpt2_pilot_baseline_s0/checkpoints/theta_AB.pt`
+- **Training Log**: `experiments/runs/gpt2_pilot_baseline_s0/training_log.jsonl`
 
-### rq1_baseline_s42
+### gpt2_rq1_baseline_s42
 
-- **Metrics**: `experiments/runs/rq1_baseline_s42/metrics.json`
-- **Runpack**: `experiments/runs/rq1_baseline_s42/runpack_rq1_baseline_s42.md`
-- **Config**: `experiments/runs/rq1_baseline_s42/config.yaml`
+- **Metrics**: `experiments/runs/gpt2_rq1_baseline_s42/metrics.json`
+- **Runpack**: `experiments/runs/gpt2_rq1_baseline_s42/runpack_gpt2_rq1_baseline_s42.md`
+- **Config**: `experiments/runs/gpt2_rq1_baseline_s42/config.yaml`
 - **Checkpoints**:
-  - `experiments/runs/rq1_baseline_s42/checkpoints/theta_A.pt`
-  - `experiments/runs/rq1_baseline_s42/checkpoints/theta_AB.pt`
-- **Training Log**: `experiments/runs/rq1_baseline_s42/training_log.jsonl`
+  - `experiments/runs/gpt2_rq1_baseline_s42/checkpoints/theta_A.pt`
+  - `experiments/runs/gpt2_rq1_baseline_s42/checkpoints/theta_AB.pt`
+- **Training Log**: `experiments/runs/gpt2_rq1_baseline_s42/training_log.jsonl`
 
-### rq1_baseline_s123
+### gpt2_rq1_baseline_s123
 
-- **Metrics**: `experiments/runs/rq1_baseline_s123/metrics.json`
-- **Runpack**: `experiments/runs/rq1_baseline_s123/runpack_rq1_baseline_s123.md`
-- **Config**: `experiments/runs/rq1_baseline_s123/config.yaml`
+- **Metrics**: `experiments/runs/gpt2_rq1_baseline_s123/metrics.json`
+- **Runpack**: `experiments/runs/gpt2_rq1_baseline_s123/runpack_gpt2_rq1_baseline_s123.md`
+- **Config**: `experiments/runs/gpt2_rq1_baseline_s123/config.yaml`
 - **Checkpoints**:
-  - `experiments/runs/rq1_baseline_s123/checkpoints/theta_A.pt`
-  - `experiments/runs/rq1_baseline_s123/checkpoints/theta_AB.pt`
-- **Training Log**: `experiments/runs/rq1_baseline_s123/training_log.jsonl`
+  - `experiments/runs/gpt2_rq1_baseline_s123/checkpoints/theta_A.pt`
+  - `experiments/runs/gpt2_rq1_baseline_s123/checkpoints/theta_AB.pt`
+- **Training Log**: `experiments/runs/gpt2_rq1_baseline_s123/training_log.jsonl`
 
-### rq2_replay25_s42
+### gpt2_rq2_replay25_s42
 
-- **Metrics**: `experiments/runs/rq2_replay25_s42/metrics.json`
-- **Runpack**: `experiments/runs/rq2_replay25_s42/runpack_rq2_replay25_s42.md`
-- **Config**: `experiments/runs/rq2_replay25_s42/config.yaml`
+- **Metrics**: `experiments/runs/gpt2_rq2_replay25_s42/metrics.json`
+- **Runpack**: `experiments/runs/gpt2_rq2_replay25_s42/runpack_gpt2_rq2_replay25_s42.md`
+- **Config**: `experiments/runs/gpt2_rq2_replay25_s42/config.yaml`
 - **Checkpoints**:
-  - `experiments/runs/rq2_replay25_s42/checkpoints/theta_A.pt`
-  - `experiments/runs/rq2_replay25_s42/checkpoints/theta_AB.pt`
-- **Training Log**: `experiments/runs/rq2_replay25_s42/training_log.jsonl`
+  - `experiments/runs/gpt2_rq2_replay25_s42/checkpoints/theta_A.pt`
+  - `experiments/runs/gpt2_rq2_replay25_s42/checkpoints/theta_AB.pt`
+- **Training Log**: `experiments/runs/gpt2_rq2_replay25_s42/training_log.jsonl`
 
-### rq2_mer25_s42
+### gpt2_rq2_mer25_s42
 
-- **Metrics**: `experiments/runs/rq2_mer25_s42/metrics.json`
-- **Runpack**: `experiments/runs/rq2_mer25_s42/runpack_rq2_mer25_s42.md`
-- **Config**: `experiments/runs/rq2_mer25_s42/config.yaml`
+- **Metrics**: `experiments/runs/gpt2_rq2_mer25_s42/metrics.json`
+- **Runpack**: `experiments/runs/gpt2_rq2_mer25_s42/runpack_gpt2_rq2_mer25_s42.md`
+- **Config**: `experiments/runs/gpt2_rq2_mer25_s42/config.yaml`
 - **Checkpoints**:
-  - `experiments/runs/rq2_mer25_s42/checkpoints/theta_A.pt`
-  - `experiments/runs/rq2_mer25_s42/checkpoints/theta_AB.pt`
-- **Training Log**: `experiments/runs/rq2_mer25_s42/training_log.jsonl`
+  - `experiments/runs/gpt2_rq2_mer25_s42/checkpoints/theta_A.pt`
+  - `experiments/runs/gpt2_rq2_mer25_s42/checkpoints/theta_AB.pt`
+- **Training Log**: `experiments/runs/gpt2_rq2_mer25_s42/training_log.jsonl`
 
-### rq2_ewc_s42
+### gpt2_rq2_ewc_s42
 
-- **Metrics**: `experiments/runs/rq2_ewc_s42/metrics.json`
-- **Runpack**: `experiments/runs/rq2_ewc_s42/runpack_rq2_ewc_s42.md`
-- **Config**: `experiments/runs/rq2_ewc_s42/config.yaml`
+- **Metrics**: `experiments/runs/gpt2_rq2_ewc_s42/metrics.json`
+- **Runpack**: `experiments/runs/gpt2_rq2_ewc_s42/runpack_gpt2_rq2_ewc_s42.md`
+- **Config**: `experiments/runs/gpt2_rq2_ewc_s42/config.yaml`
 - **Checkpoints**:
-  - `experiments/runs/rq2_ewc_s42/checkpoints/theta_A.pt`
-  - `experiments/runs/rq2_ewc_s42/checkpoints/theta_AB.pt`
-- **Training Log**: `experiments/runs/rq2_ewc_s42/training_log.jsonl`
+  - `experiments/runs/gpt2_rq2_ewc_s42/checkpoints/theta_A.pt`
+  - `experiments/runs/gpt2_rq2_ewc_s42/checkpoints/theta_AB.pt`
+- **Training Log**: `experiments/runs/gpt2_rq2_ewc_s42/training_log.jsonl`

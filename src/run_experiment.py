@@ -23,13 +23,17 @@ import argparse
 import logging
 import csv
 import random
+import platform
+import hashlib
+import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import pickle
 
 import torch
-from transformers import GPT2Tokenizer, GPT2LMHeadModel
+import transformers
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -67,9 +71,10 @@ def update_run_registry(
     run_id: str,
     updates: Dict[str, Any]
 ):
-    """Update run registry CSV with run status."""
+    """Update run registry CSV with run status. Appends new row if run_id not found."""
     rows = []
     headers = None
+    found = False
 
     # Read existing
     with open(registry_path, 'r') as f:
@@ -78,7 +83,15 @@ def update_run_registry(
         for row in reader:
             if row['run_id'] == run_id:
                 row.update(updates)
+                found = True
             rows.append(row)
+
+    # Append new row if run_id not found
+    if not found:
+        new_row = {h: '' for h in headers}
+        new_row['run_id'] = run_id
+        new_row.update(updates)
+        rows.append(new_row)
 
     # Write back
     with open(registry_path, 'w', newline='') as f:
@@ -128,19 +141,23 @@ def choose_device(allow_cpu: bool = False) -> str:
     return "cpu"
 
 
-def log_device_info(device: str) -> None:
+def log_device_info(device: str, model_dtype: str = "float32") -> None:
     """
-    Log GPU preflight information.
+    Log GPU preflight information and run safety assertions.
 
     Args:
         device: Selected device ("cuda", "mps", or "cpu")
+        model_dtype: Model dtype string from config (e.g. "bfloat16")
     """
     print("\n" + "=" * 60)
     print("PRE-RUN GPU PREFLIGHT")
     print("=" * 60)
 
-    # PyTorch version
+    # Library versions
+    print(f"  Python version:     {platform.python_version()} ({platform.machine()})")
     print(f"  PyTorch version:    {torch.__version__}")
+    print(f"  Transformers ver:   {transformers.__version__}")
+    print(f"  Platform:           {platform.system()} {platform.release()}")
 
     # CUDA info
     cuda_available = torch.cuda.is_available()
@@ -167,11 +184,18 @@ def log_device_info(device: str) -> None:
     # Warning banner for CPU
     if device == "cpu":
         print("-" * 60)
-        print("  ⚠️  WARNING: Running on CPU only!")
-        print("  ⚠️  Training will be significantly slower.")
-        print("  ⚠️  Consider using a GPU-enabled machine.")
+        print("  WARNING: Running on CPU only!")
+        print("  Training will be significantly slower.")
+        print("  Consider using a GPU-enabled machine.")
 
     print("=" * 60 + "\n")
+
+    # Safety assertion: bfloat16 on MPS requires PyTorch >= 2.10
+    if device == "mps" and model_dtype == "bfloat16":
+        torch_major, torch_minor = (int(x) for x in torch.__version__.split(".")[:2])
+        assert (torch_major, torch_minor) >= (2, 10), (
+            f"PyTorch >= 2.10 required for bfloat16 on MPS, got {torch.__version__}"
+        )
 
 
 class ExperimentRunner:
@@ -198,6 +222,7 @@ class ExperimentRunner:
         self.output_dir = project_root / "experiments" / "runs" / run_id
         self.data_dir = project_root / "data"
         self.eval_dir = self.data_dir / "eval"
+        self.model_family = self.config.get("model", {}).get("family", "")
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -223,15 +248,29 @@ class ExperimentRunner:
 
         # Device selection with preflight check
         self.device = choose_device(allow_cpu=allow_cpu)
-        log_device_info(self.device)
+        model_dtype = self.config.get("model", {}).get("dtype", "float32")
+        log_device_info(self.device, model_dtype=model_dtype)
 
         # Initialize model and tokenizer
-        logger.info("Loading model and tokenizer...")
-        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+        model_cfg = self.config.get("model", {})
+        model_name = model_cfg.get("name", "gpt2")
+        logger.info(f"Loading model and tokenizer: {model_name}")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            trust_remote_code=model_cfg.get("trust_remote_code", False),
+        )
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # Parse dtype string from config (e.g. "bfloat16" -> torch.bfloat16)
+        dtype_str = model_cfg.get("dtype", "float32")
+        torch_dtype = getattr(torch, dtype_str, torch.float32)
+
         self.model = create_model(
-            self.config.get("model", {}).get("name", "gpt2"),
-            self.config.get("model", {}).get("gradient_checkpointing", True)
+            model_name,
+            gradient_checkpointing=model_cfg.get("gradient_checkpointing", True),
+            torch_dtype=torch_dtype,
+            trust_remote_code=model_cfg.get("trust_remote_code", False),
         )
 
         # Initialize trainer
@@ -265,13 +304,21 @@ class ExperimentRunner:
         # Reference distributions for drift
         self.ref_distributions = None
 
+    def _manifest_path(self, filename: str) -> Path:
+        """Resolve manifest path: try model-specific dir first, then fallback."""
+        if self.model_family:
+            model_path = self.data_dir / "manifests" / self.model_family / filename
+            if model_path.exists():
+                return model_path
+        return self.data_dir / "manifests" / filename
+
     def load_data(self) -> tuple:
         """Load tokenized training and evaluation data."""
         logger.info("Loading data...")
 
-        # Load manifests
-        manifest_a = load_manifest(self.data_dir / "manifests" / "domain_a.json")
-        manifest_b = load_manifest(self.data_dir / "manifests" / "domain_b.json")
+        # Load manifests (model-specific dir first, then fallback)
+        manifest_a = load_manifest(self._manifest_path("domain_a.json"))
+        manifest_b = load_manifest(self._manifest_path("domain_b.json"))
 
         # Load tokenized training data
         tokens_a = torch.load(self.project_root / manifest_a["train_path"])
@@ -309,10 +356,15 @@ class ExperimentRunner:
         logger.info(f"Evaluating checkpoint: {checkpoint_name}")
         results = {}
 
+        eval_cfg = self.config.get("evaluation", {})
+        ppl_bs = eval_cfg.get("ppl_batch_size", 8)
+        ppl_sl = eval_cfg.get("ppl_sequence_length", 512)
+
         # PPL on Domain A
         ppl_a = self.metrics_computer.compute_ppl(
             valid_tokens_a,
-            batch_size=self.config.get("evaluation", {}).get("ppl_batch_size", 8)
+            batch_size=ppl_bs,
+            sequence_length=ppl_sl
         )
         results["ppl_a"] = ppl_a["ppl_primary"]
         results["ppl_a_median_batch"] = ppl_a["ppl_median_batch"]
@@ -321,7 +373,8 @@ class ExperimentRunner:
         if valid_tokens_b is not None:
             ppl_b = self.metrics_computer.compute_ppl(
                 valid_tokens_b,
-                batch_size=self.config.get("evaluation", {}).get("ppl_batch_size", 8)
+                batch_size=ppl_bs,
+                sequence_length=ppl_sl
             )
             results["ppl_b"] = ppl_b["ppl_primary"]
             results["ppl_b_median_batch"] = ppl_b["ppl_median_batch"]
@@ -561,11 +614,15 @@ class ExperimentRunner:
             }
 
             # Run metadata
+            model_cfg = self.config.get("model", {})
             self.results["run"] = {
                 "run_id": self.run_id,
                 "research_question": "RQ0" if "pilot" in self.run_id else "RQ1",
                 "method": self.config.get("method", "baseline"),
                 "seed": self.seed,
+                "model_id": model_cfg.get("name", "gpt2"),
+                "model_family": model_cfg.get("family", "gpt2"),
+                "model_params_m": model_cfg.get("params_m", 124),
                 "timestamp_start": self._utc_iso_timestamp(start_time),
                 "timestamp_end": self._utc_iso_timestamp(end_time),
                 "status": "completed",
@@ -613,6 +670,48 @@ class ExperimentRunner:
             })
             raise
 
+    def _save_run_env(self):
+        """Persist environment snapshot for reproducibility."""
+        model_cfg = self.config.get("model", {})
+
+        # Git commit hash (best-effort)
+        git_hash = None
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+                cwd=self.project_root,
+            )
+            if result.returncode == 0:
+                git_hash = result.stdout.strip()
+        except Exception:
+            pass
+
+        # requirements.txt hash (best-effort)
+        req_hash = None
+        req_path = self.project_root / "requirements.txt"
+        if req_path.exists():
+            req_hash = hashlib.sha256(req_path.read_bytes()).hexdigest()[:16]
+
+        env_snapshot = {
+            "python_version": platform.python_version(),
+            "python_arch": platform.machine(),
+            "torch_version": torch.__version__,
+            "transformers_version": transformers.__version__,
+            "platform": f"{platform.system()} {platform.release()}",
+            "device": self.device,
+            "model_id": model_cfg.get("name", "gpt2"),
+            "model_dtype": model_cfg.get("dtype", "float32"),
+            "git_commit": git_hash,
+            "requirements_txt_hash": req_hash,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        env_path = self.output_dir / "run_env.json"
+        with open(env_path, 'w') as f:
+            json.dump(env_snapshot, f, indent=2)
+        logger.info(f"Environment snapshot saved: {env_path}")
+
     def _save_outputs(self):
         """Save all output files."""
         # metrics.json
@@ -620,6 +719,9 @@ class ExperimentRunner:
         with open(metrics_path, 'w') as f:
             json.dump(self.results, f, indent=2, default=str)
         logger.info(f"Metrics saved: {metrics_path}")
+
+        # Environment snapshot
+        self._save_run_env()
 
         # Training log
         self.trainer.save_training_log(self.output_dir / "training_log.jsonl")
@@ -774,10 +876,34 @@ class ExperimentRunner:
         logger.info(f"Runpack saved: {runpack_path}")
 
 
+def merge_configs(method_config: Dict[str, Any], model_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge a model config into a method config.
+
+    The model config supplies the ``model:`` section and optional
+    ``training_overrides:`` that are applied to both domain_a and domain_b
+    training blocks.
+    """
+    merged = dict(method_config)
+    merged["model"] = model_config["model"]
+
+    overrides = model_config.get("training_overrides", {})
+    if overrides:
+        for domain in ("domain_a", "domain_b"):
+            merged.setdefault("training", {}).setdefault(domain, {}).update(overrides)
+
+    eval_overrides = model_config.get("evaluation_overrides", {})
+    if eval_overrides:
+        merged.setdefault("evaluation", {}).update(eval_overrides)
+
+    return merged
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run continual pretraining experiment")
     parser.add_argument("--run-id", type=str, required=True, help="Run identifier")
-    parser.add_argument("--config", type=str, required=True, help="Path to config YAML")
+    parser.add_argument("--config", type=str, required=True, help="Path to method config YAML")
+    parser.add_argument("--model-config", type=str, default=None,
+                        help="Path to model config YAML (overrides model section in --config)")
     parser.add_argument("--seed", type=int, default=None, help="Random seed (overrides config)")
     parser.add_argument("--project-root", type=str, default=None, help="Project root directory")
     parser.add_argument("--allow-cpu", action="store_true", default=False,
@@ -789,10 +915,26 @@ def main():
     if not config_path.is_absolute():
         config_path = project_root / config_path
 
+    # Merge model config into method config when provided
+    if args.model_config:
+        model_config_path = Path(args.model_config)
+        if not model_config_path.is_absolute():
+            model_config_path = project_root / model_config_path
+        method_cfg = load_config(config_path)
+        model_cfg = load_config(model_config_path)
+        merged = merge_configs(method_cfg, model_cfg)
+        # Write merged config to a temp file so ExperimentRunner loads it
+        merged_path = project_root / "experiments" / "runs" / args.run_id / "config_merged.yaml"
+        merged_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(merged_path, 'w') as f:
+            yaml.safe_dump(merged, f, default_flow_style=False)
+        config_path = merged_path
+        logger.info(f"Merged config written to {merged_path}")
+
     # Determine seed
     seed = args.seed
     if seed is None:
-        # Extract from run_id if present (e.g., pilot_baseline_s0 -> 0)
+        # Extract from run_id if present (e.g., gpt2_rq1_baseline_s42 -> 42)
         if "_s" in args.run_id:
             try:
                 seed = int(args.run_id.split("_s")[-1])

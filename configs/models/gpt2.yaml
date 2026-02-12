@@ -1,0 +1,17 @@
+# GPT-2 Small (124M) — OpenAI
+# HuggingFace: gpt2
+# Existing MPP model; this config backfills metadata for consistency.
+
+model:
+  name: gpt2
+  family: gpt2
+  params_m: 124
+  dtype: float32
+  pretrained: true
+  gradient_checkpointing: true
+  trust_remote_code: false
+
+# Uniform evaluation protocol across all models
+evaluation_overrides:
+  ppl_batch_size: 1
+  ppl_sequence_length: 512

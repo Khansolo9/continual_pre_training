@@ -1,0 +1,2 @@
+{"step": 10, "loss": 3.126370429992676, "avg_loss": 3.237227272987366, "lr": 5e-06, "tokens_per_sec": 397.29436508867815, "elapsed_sec": 206.19471907615662, "domain": "domain_a"}
+{"step": 10, "loss": 2.4976813793182373, "avg_loss": 3.1578314781188963, "lr": 5e-06, "tokens_per_sec": 376.9912360818584, "elapsed_sec": 217.29948115348816, "domain": "domain_b"}

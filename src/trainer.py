@@ -18,6 +18,7 @@ Supports:
 Supports gradient checkpointing for laptop VRAM constraints.
 """
 
+import gc
 import os
 import time
 import json
@@ -32,7 +33,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
-from transformers import GPT2LMHeadModel, GPT2Config
+from transformers import AutoModelForCausalLM, AutoConfig
 from tqdm import tqdm
 
 from cl_methods import (
@@ -381,6 +382,10 @@ class CPTTrainer:
                 batch_size=batch_size,
                 sequence_length=seq_len
             )
+            # Flush stale allocations from Fisher computation before Domain B
+            gc.collect()
+            if self.device == "mps":
+                torch.mps.empty_cache()
 
         # Replay buffer setup
         if is_replay_method(self.method):
@@ -530,16 +535,21 @@ class CPTTrainer:
             outputs = self.model(input_ids, labels=input_ids)
             ce_loss = outputs.loss
 
-            # Add EWC penalty if enabled
-            if is_ewc_method(self.method) and self.ewc is not None:
+            # EWC penalty: compute ONCE per gradient step (on the last
+            # microbatch of each accumulation window).  The penalty depends
+            # only on current params θ, which don't change until
+            # optimizer.step(), so repeating it every microbatch is
+            # redundant and very expensive for large models (~1B params).
+            is_accum_boundary = (pbar.n + 1) % grad_accum == 0
+            if is_ewc_method(self.method) and self.ewc is not None and is_accum_boundary:
                 ewc_penalty = self.ewc.penalty(ewc_lambda)
-                loss = ce_loss + ewc_penalty
+                # ce_loss is scaled by 1/grad_accum; penalty is NOT scaled
+                # so its gradient contribution matches the pre-fix behaviour:
+                #   total = avg(∇CE) + ∇penalty
+                loss = ce_loss / grad_accum + ewc_penalty
                 total_ewc_penalty += ewc_penalty.item()
             else:
-                loss = ce_loss
-
-            # Scale for gradient accumulation
-            loss = loss / grad_accum
+                loss = ce_loss / grad_accum
 
             # Backward pass
             loss.backward()
@@ -651,9 +661,18 @@ class CPTTrainer:
         return stats
 
 
-def create_model(model_name: str = "gpt2", gradient_checkpointing: bool = True):
-    """Create GPT-2 model with optional gradient checkpointing."""
-    model = GPT2LMHeadModel.from_pretrained(model_name)
+def create_model(
+    model_name: str = "gpt2",
+    gradient_checkpointing: bool = True,
+    torch_dtype=None,
+    trust_remote_code: bool = False,
+):
+    """Create a causal LM from any HuggingFace model identifier."""
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch_dtype or torch.float32,
+        trust_remote_code=trust_remote_code,
+    )
 
     if gradient_checkpointing:
         model.gradient_checkpointing_enable()

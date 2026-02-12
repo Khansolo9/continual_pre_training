@@ -261,16 +261,15 @@ class EWC:
         self._computed = True
         self.model.train()
 
-        # Log detailed statistics for verification
+        # Log statistics without concatenating all Fisher values (avoids OOM on large models)
         total_params = sum(f.numel() for f in self.fisher_diag.values())
-        all_fisher = torch.cat([f.flatten() for f in self.fisher_diag.values()])
-        mean_fisher = all_fisher.mean().item()
-        median_fisher = all_fisher.median().item()
-        max_fisher = all_fisher.max().item()
+        weighted_sum = sum(f.sum().item() for f in self.fisher_diag.values())
+        mean_fisher = weighted_sum / total_params if total_params > 0 else 0.0
+        max_fisher = max(f.max().item() for f in self.fisher_diag.values())
 
         logger.info(
             f"Fisher computed: {total_params:,} parameters, "
-            f"mean={mean_fisher:.6f}, median={median_fisher:.6f}, max={max_fisher:.6f}, "
+            f"mean={mean_fisher:.6f}, max={max_fisher:.6f}, "
             f"total_tokens={total_tokens:,}"
         )
 

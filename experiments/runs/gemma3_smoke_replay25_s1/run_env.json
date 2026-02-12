@@ -1,0 +1,13 @@
+{
+  "python_version": "3.12.12",
+  "python_arch": "arm64",
+  "torch_version": "2.10.0",
+  "transformers_version": "5.0.0",
+  "platform": "Darwin 24.5.0",
+  "device": "mps",
+  "model_id": "google/gemma-3-1b-pt",
+  "model_dtype": "bfloat16",
+  "git_commit": "fae73febaa92c27e6946db9b73d6411bbb11c023",
+  "requirements_txt_hash": "dbba55b02874772f",
+  "captured_at": "2026-02-12T06:53:42.417421+00:00"
+}

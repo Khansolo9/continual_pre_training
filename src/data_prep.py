@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Try imports - provide helpful error if missing
 try:
     import torch
-    from transformers import GPT2Tokenizer
+    from transformers import AutoTokenizer
     from datasets import load_dataset, Dataset
     import numpy as np
 except ImportError as e:
@@ -58,21 +58,29 @@ class DataPreparer:
     """Prepares datasets for continual pretraining experiments."""
 
     def __init__(self, project_root: Path, token_budget_a: int = 10_000_000,
-                 token_budget_b: int = 10_000_000):
+                 token_budget_b: int = 10_000_000,
+                 model_name: str = "gpt2",
+                 model_family: str = "",
+                 trust_remote_code: bool = False):
         self.project_root = project_root
         self.token_budget_a = token_budget_a
         self.token_budget_b = token_budget_b
+        self.model_name = model_name
+        self.model_family = model_family or model_name.split("/")[-1].lower().replace("-", "_")
 
         # Initialize tokenizer
-        logger.info("Loading GPT-2 tokenizer...")
-        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+        logger.info(f"Loading tokenizer for {model_name}...")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=trust_remote_code
+        )
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # Paths
+        # Paths — outputs go to model-specific subdirectory
         self.data_dir = project_root / "data"
-        self.processed_dir = self.data_dir / "processed"
+        self.processed_dir = self.data_dir / "processed" / self.model_family
         self.eval_dir = self.data_dir / "eval"
-        self.manifest_dir = self.data_dir / "manifests"
+        self.manifest_dir = self.data_dir / "manifests" / self.model_family
 
         # Create directories
         for d in [self.processed_dir, self.eval_dir, self.manifest_dir]:
@@ -118,8 +126,10 @@ class DataPreparer:
             tokens = self.tokenizer.encode(text, add_special_tokens=False)
             valid_tokens.extend(tokens)
 
-        # Save validation set
-        valid_path = self.eval_dir / "wikitext103_valid_tokens.pt"
+        # Save validation set (model-specific subdirectory)
+        eval_model_dir = self.eval_dir / self.model_family
+        eval_model_dir.mkdir(parents=True, exist_ok=True)
+        valid_path = eval_model_dir / "wikitext103_valid_tokens.pt"
         torch.save(torch.tensor(valid_tokens, dtype=torch.long), valid_path)
         logger.info(f"WikiText-103 valid: {len(valid_tokens):,} tokens")
 
@@ -212,8 +222,10 @@ class DataPreparer:
         # Limit validation size
         valid_tokens = valid_tokens[:500000]  # ~500K tokens max for validation
 
-        # Save validation set
-        valid_path = self.eval_dir / "arxiv_valid_tokens.pt"
+        # Save validation set (model-specific subdirectory)
+        eval_model_dir = self.eval_dir / self.model_family
+        eval_model_dir.mkdir(parents=True, exist_ok=True)
+        valid_path = eval_model_dir / "arxiv_valid_tokens.pt"
         torch.save(torch.tensor(valid_tokens, dtype=torch.long), valid_path)
         logger.info(f"ArXiv valid: {len(valid_tokens):,} tokens")
 
@@ -371,6 +383,12 @@ def main():
                         help="Token budget for Domain A (default: 10M)")
     parser.add_argument("--token-budget-b", type=int, default=10_000_000,
                         help="Token budget for Domain B (default: 10M)")
+    parser.add_argument("--model-name", type=str, default="gpt2",
+                        help="HuggingFace model name for tokenizer (default: gpt2)")
+    parser.add_argument("--model-family", type=str, default="",
+                        help="Short slug for output directory (default: derived from model-name)")
+    parser.add_argument("--trust-remote-code", action="store_true", default=False,
+                        help="Pass trust_remote_code=True to tokenizer (needed for Qwen)")
     parser.add_argument("--project-root", type=str, default=None,
                         help="Project root directory")
     args = parser.parse_args()
@@ -380,7 +398,10 @@ def main():
     preparer = DataPreparer(
         project_root=project_root,
         token_budget_a=args.token_budget_a,
-        token_budget_b=args.token_budget_b
+        token_budget_b=args.token_budget_b,
+        model_name=args.model_name,
+        model_family=args.model_family,
+        trust_remote_code=args.trust_remote_code,
     )
 
     preparer.run()

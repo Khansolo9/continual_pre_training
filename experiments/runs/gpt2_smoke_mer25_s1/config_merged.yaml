@@ -1,0 +1,64 @@
+data:
+  domain_a:
+    name: wikitext-103
+    tier: smoke
+    tokens: 100000
+  domain_b:
+    name: arxiv_abstracts
+    tier: smoke
+    tokens: 100000
+  sequence_length: 512
+evaluation:
+  drift:
+    do_sample: false
+    max_new_tokens: 64
+    promptset: prompts_drift_v1.json
+  ppl_batch_size: 1
+  ppl_sequence_length: 512
+  quality:
+    do_sample: true
+    max_new_tokens: 64
+    promptset: prompts_quality_v1.json
+    temperature: 0.7
+    top_p: 0.9
+logging:
+  eval_steps: 100
+  log_steps: 10
+  save_training_log: true
+method: mer25
+method_params:
+  buffer_size_pct: 10
+  replay_rate: 0.25
+  reptile_epsilon: 0.1
+  reptile_interval: 10
+model:
+  dtype: float32
+  family: gpt2
+  gradient_checkpointing: true
+  name: gpt2
+  params_m: 124
+  pretrained: true
+  trust_remote_code: false
+seed: 1
+smoke_mode:
+  enabled: true
+  max_drift_prompts: 10
+  max_eval_batches: 10
+  max_lambada: 50
+  max_quality_prompts: 20
+  max_tokens_per_domain: 100000
+training:
+  domain_a:
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    learning_rate: 5.0e-05
+    max_grad_norm: 1.0
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+  domain_b:
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    learning_rate: 5.0e-05
+    max_grad_norm: 1.0
+    warmup_ratio: 0.05
+    weight_decay: 0.01

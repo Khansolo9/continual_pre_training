@@ -52,11 +52,11 @@ Loaded 6 completed runs with valid metrics
 
 ### Search Results
 - No `*leanfix*` or `*_lean*` files/directories found
-- No `pilot_baseline_s0_leanfix` directory exists in `experiments/runs/`
+- No `gpt2_pilot_baseline_s0_leanfix` directory exists in `experiments/runs/`
 
 ### Historical References Found (documentation only)
 The following files contain historical references to `leanfix`:
-- `docs/PROJECT_STATUS.md` - Documents that `pilot_baseline_s0_leanfix` was an experimental run that was reverted
+- `docs/PROJECT_STATUS.md` - Documents that `gpt2_pilot_baseline_s0_leanfix` was an experimental run that was reverted
 - `experiments/diagnostics/why_results_not_as_expected.md` - Historical analysis
 - `src/adhoc/inspect_run.py` - Example in docstring
 - `src/adhoc/recover_from_checkpoints.py` - Example in docstring
@@ -75,18 +75,18 @@ These are appropriate historical documentation and do not require cleanup.
 
 | Run ID | Runpack Had | Registry Has | Status |
 |--------|-------------|--------------|--------|
-| rq2_ewc_s42 | RQ1 | RQ2 | **FIXED** |
-| smoke_baseline_s1 | RQ1 | SMOKE | **FIXED** |
-| smoke_replay25_s1 | RQ1 | SMOKE | **FIXED** |
-| smoke_ewc_s1 | RQ1 | SMOKE | **FIXED** |
-| smoke_mer25_s1 | RQ1 | SMOKE | **FIXED** |
+| gpt2_rq2_ewc_s42 | RQ1 | RQ2 | **FIXED** |
+| gpt2_smoke_baseline_s1 | RQ1 | SMOKE | **FIXED** |
+| gpt2_smoke_replay25_s1 | RQ1 | SMOKE | **FIXED** |
+| gpt2_smoke_ewc_s1 | RQ1 | SMOKE | **FIXED** |
+| gpt2_smoke_mer25_s1 | RQ1 | SMOKE | **FIXED** |
 
 ### Consistent Runpacks (no changes needed)
-- `pilot_baseline_s0` (RQ0)
-- `rq1_baseline_s42` (RQ1)
-- `rq1_baseline_s123` (RQ1)
-- `rq2_replay25_s42` (RQ2)
-- `rq2_mer25_s42` (RQ2)
+- `gpt2_pilot_baseline_s0` (RQ0)
+- `gpt2_rq1_baseline_s42` (RQ1)
+- `gpt2_rq1_baseline_s123` (RQ1)
+- `gpt2_rq2_replay25_s42` (RQ2)
+- `gpt2_rq2_mer25_s42` (RQ2)
 
 ---
 
@@ -97,11 +97,11 @@ These are appropriate historical documentation and do not require cleanup.
 | `src/adhoc/generate_summary_pack.py` | Added smoke exclusion logic and `--include-smoke` flag |
 | `experiments/summary_pack.md` | Regenerated with smoke runs excluded |
 | `experiments/summary_table.csv` | Regenerated with smoke runs excluded |
-| `experiments/runs/rq2_ewc_s42/runpack_rq2_ewc_s42.md` | Fixed RQ: RQ1 → RQ2 |
-| `experiments/runs/smoke_baseline_s1/runpack_smoke_baseline_s1.md` | Fixed RQ: RQ1 → SMOKE |
-| `experiments/runs/smoke_replay25_s1/runpack_smoke_replay25_s1.md` | Fixed RQ: RQ1 → SMOKE |
-| `experiments/runs/smoke_ewc_s1/runpack_smoke_ewc_s1.md` | Fixed RQ: RQ1 → SMOKE |
-| `experiments/runs/smoke_mer25_s1/runpack_smoke_mer25_s1.md` | Fixed RQ: RQ1 → SMOKE |
+| `experiments/runs/gpt2_rq2_ewc_s42/runpack_gpt2_rq2_ewc_s42.md` | Fixed RQ: RQ1 → RQ2 |
+| `experiments/runs/gpt2_smoke_baseline_s1/runpack_gpt2_smoke_baseline_s1.md` | Fixed RQ: RQ1 → SMOKE |
+| `experiments/runs/gpt2_smoke_replay25_s1/runpack_gpt2_smoke_replay25_s1.md` | Fixed RQ: RQ1 → SMOKE |
+| `experiments/runs/gpt2_smoke_ewc_s1/runpack_gpt2_smoke_ewc_s1.md` | Fixed RQ: RQ1 → SMOKE |
+| `experiments/runs/gpt2_smoke_mer25_s1/runpack_gpt2_smoke_mer25_s1.md` | Fixed RQ: RQ1 → SMOKE |
 
 ---
 
