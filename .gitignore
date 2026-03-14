@@ -43,7 +43,14 @@ data/
 # --- claude ---
 *.claude/
 
-# --- misc --- 
+# --- Experiment run artifacts (checkpoints, logs, metrics) ---
+experiments/runs/
+
+# --- Backup / temp ---
+.cpt-env-x86-backup/
+_hf_check_gemma/
+
+# --- misc ---
 denario_project/
 docs/
 evidence/

@@ -2,7 +2,7 @@
 """
 Experiment Runner for Continual Pretraining
 
-Executes a single run according to docs/RUNBOOK.md:
+Executes a single run according to docs/specs/RUNBOOK.md:
 1. Load config and register run
 2. Train on Domain A
 3. Evaluate and save checkpoint
@@ -47,6 +47,23 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class TeeStream:
+    """Duplicate writes to both the original stream and a log file."""
+
+    def __init__(self, original, log_file):
+        self.original = original
+        self.log_file = log_file
+
+    def write(self, data):
+        self.original.write(data)
+        self.log_file.write(data)
+        self.log_file.flush()
+
+    def flush(self):
+        self.original.flush()
+        self.log_file.flush()
 
 
 def get_project_root() -> Path:
@@ -226,6 +243,20 @@ class ExperimentRunner:
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Tee all output (logging + tqdm) to run.log for track_run.py
+        self._log_path = self.output_dir / "run.log"
+        self._log_file = open(self._log_path, "a")
+        # Add file handler for logging module
+        file_handler = logging.FileHandler(self._log_path)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        ))
+        logging.getLogger().addHandler(file_handler)
+        self._file_handler = file_handler
+        # Tee stderr so tqdm progress bars also reach run.log
+        sys.stderr = TeeStream(sys.__stderr__, self._log_file)
 
         # Copy frozen config
         shutil.copy(config_path, self.output_dir / "config.yaml")
@@ -446,6 +477,19 @@ class ExperimentRunner:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.isoformat().replace("+00:00", "Z")
 
+    def _infer_research_question(self):
+        """Infer RQ from run_id and method."""
+        if "pilot" in self.run_id:
+            return "RQ0"
+        if "smoke" in self.run_id:
+            return "SMOKE"
+        method = self.config.get("method", "baseline")
+        if method in ("bandit_replay", "rmgs"):
+            return "RQ4"
+        if method in ("replay25", "mer25", "ewc"):
+            return "RQ2"
+        return "RQ1"
+
     def _fmt(self, val: Any, fmt: str = ".2f") -> str:
         """Safely format numeric values, returning 'N/A' for None or invalid."""
         if val is None:
@@ -542,7 +586,7 @@ class ExperimentRunner:
             method = self.config.get("method", "baseline")
             if method != "baseline":
                 logger.info(f"\n[2.5/5] Setting up CL method: {method}...")
-                self.trainer.setup_cl_after_domain_a(tokens_a)
+                self.trainer.setup_cl_after_domain_a(tokens_a, valid_tokens_a=valid_a)
 
             # ===== POST-A EVALUATION =====
             logger.info("\n[3/5] Evaluation after Domain A...")
@@ -617,7 +661,7 @@ class ExperimentRunner:
             model_cfg = self.config.get("model", {})
             self.results["run"] = {
                 "run_id": self.run_id,
-                "research_question": "RQ0" if "pilot" in self.run_id else "RQ1",
+                "research_question": self._infer_research_question(),
                 "method": self.config.get("method", "baseline"),
                 "seed": self.seed,
                 "model_id": model_cfg.get("name", "gpt2"),
@@ -632,6 +676,11 @@ class ExperimentRunner:
 
             # Method params (empty for baseline)
             self.results["method_params"] = self.config.get("method_params", {})
+
+            # RL method stats (bandit_replay / rmgs)
+            rl_stats = self.trainer.get_rl_method_stats()
+            if rl_stats is not None:
+                self.results["rl_method_stats"] = rl_stats
 
             # Check for anomalies (None-safe)
             rep4_after = self.results["metrics"].get("rep4_after")
@@ -669,6 +718,13 @@ class ExperimentRunner:
                 "notes": str(e)
             })
             raise
+        finally:
+            # Restore stderr and close log file
+            sys.stderr = sys.__stderr__
+            if hasattr(self, '_file_handler'):
+                logging.getLogger().removeHandler(self._file_handler)
+            if hasattr(self, '_log_file'):
+                self._log_file.close()
 
     def _save_run_env(self):
         """Persist environment snapshot for reproducibility."""

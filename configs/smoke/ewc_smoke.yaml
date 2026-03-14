@@ -11,7 +11,6 @@ method_params:
 smoke_mode:
   enabled: true
   max_tokens_per_domain: 100000
-  max_eval_batches: 10
   max_lambada: 50
   max_drift_prompts: 10
   max_quality_prompts: 20

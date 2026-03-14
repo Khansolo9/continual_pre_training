@@ -8,7 +8,6 @@ method_params: {}
 smoke_mode:
   enabled: true
   max_tokens_per_domain: 100000  # ~100k tokens
-  max_eval_batches: 10  # Reduce eval batches
   max_lambada: 50  # Limit LAMBADA examples
   max_drift_prompts: 10  # Limit drift prompts
   max_quality_prompts: 20  # Limit quality prompts

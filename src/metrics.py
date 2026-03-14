@@ -2,7 +2,7 @@
 """
 Metrics Module for Continual Pretraining Experiments
 
-Implements metrics per docs/METRICS_CATALOG.md:
+Implements metrics per docs/specs/METRICS_CATALOG.md:
 - PPL (primary: token-weighted NLL; secondary: median-batch)
 - Forgetting percentage
 - Rep-n (repetition metrics)

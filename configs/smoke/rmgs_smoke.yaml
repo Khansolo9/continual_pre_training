@@ -1,0 +1,70 @@
+method: rmgs
+method_params:
+  probe_size: 20
+  probe_interval: 3
+  ema_alpha: 0.3
+  beta: 2.0
+  min_scale: 0.05
+
+smoke_mode:
+  enabled: true
+  max_tokens_per_domain: 100000
+  max_lambada: 50
+  max_drift_prompts: 10
+  max_quality_prompts: 20
+
+model:
+  name: gpt2
+  family: gpt2
+  params_m: 124
+  dtype: float32
+  pretrained: true
+  gradient_checkpointing: true
+  trust_remote_code: false
+
+training:
+  domain_a:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+  domain_b:
+    learning_rate: 5.0e-5
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+
+data:
+  sequence_length: 512
+  domain_a:
+    name: wikitext-103
+    tier: smoke
+    tokens: 100000
+  domain_b:
+    name: arxiv_abstracts
+    tier: smoke
+    tokens: 100000
+
+evaluation:
+  ppl_batch_size: 8
+  drift:
+    promptset: prompts_drift_v1.json
+    max_new_tokens: 64
+    do_sample: false
+  quality:
+    promptset: prompts_quality_v1.json
+    max_new_tokens: 64
+    do_sample: true
+    temperature: 0.7
+    top_p: 0.9
+
+logging:
+  log_steps: 10
+  eval_steps: 100
+  save_training_log: true
+
+seed: 1

@@ -2,7 +2,7 @@
 """
 Training Module for Continual Pretraining Experiments
 
-Implements training procedures per docs/RUNBOOK.md:
+Implements training procedures per docs/specs/RUNBOOK.md:
 1. Train on Domain A
 2. Save checkpoint (theta_A)
 3. [Optional] Compute Fisher for EWC, build replay buffer
@@ -38,8 +38,11 @@ from tqdm import tqdm
 
 from cl_methods import (
     ReplayBuffer, create_replay_buffer, create_mixed_batch,
-    EWC, MER,
-    get_method_name, get_method_params, is_replay_method, is_ewc_method, is_mer_method
+    EWC, MER, BanditReplay, RMGS,
+    create_probe_set, evaluate_probe,
+    get_method_name, get_method_params,
+    is_replay_method, is_ewc_method, is_mer_method,
+    is_bandit_replay_method, is_rmgs_method,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,6 +98,12 @@ class CPTTrainer:
         self.ewc: Optional[EWC] = None
         self.replay_buffer: Optional[ReplayBuffer] = None
         self.mer: Optional[MER] = None
+        self.bandit: Optional[BanditReplay] = None
+        self.rmgs: Optional[RMGS] = None
+
+        # RL method tracking (populated during Domain B training)
+        self._total_effective_lr = 0.0
+        self._domain_b_final_loss = 0.0
 
         logger.info(f"Method: {self.method}, params: {self.method_params}")
 
@@ -213,6 +222,7 @@ class CPTTrainer:
         # Training loop
         start_time = time.time()
         global_step = 0
+        microbatch_count = 0
         total_loss = 0.0
         tokens_processed = 0
 
@@ -238,9 +248,10 @@ class CPTTrainer:
             # Backward pass
             loss.backward()
             tokens_processed += input_ids.numel()
+            microbatch_count += 1
 
             # Gradient accumulation
-            if (pbar.n + 1) % grad_accum == 0:
+            if microbatch_count % grad_accum == 0:
                 # Gradient clipping
                 torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(),
@@ -285,7 +296,7 @@ class CPTTrainer:
                     eval_callback(global_step, domain_name)
                     self.model.train()
 
-            pbar.update(1)
+                pbar.update(1)
 
         pbar.close()
 
@@ -357,18 +368,30 @@ class CPTTrainer:
     # CL Method Setup (call after Domain A training)
     # =========================================================================
 
-    def setup_cl_after_domain_a(self, tokens_a: torch.Tensor):
+    def setup_cl_after_domain_a(
+        self,
+        tokens_a: torch.Tensor,
+        valid_tokens_a: Optional[torch.Tensor] = None
+    ):
         """
         Set up continual learning components after Domain A training.
 
         For EWC: Compute Fisher diagonal and store anchor weights.
         For Replay/MER: Build replay buffer from Domain A tokens.
         For MER: Initialize Reptile state.
+        For BanditReplay: Build replay buffer + initialize bandit with probe set.
+        For RMGS: Initialize gradient scaling controller with probe set.
 
         Args:
             tokens_a: Domain A training tokens
+            valid_tokens_a: Domain A validation tokens (required for RL methods)
         """
         seq_len = self.config.get("data", {}).get("sequence_length", 512)
+
+        # Free stale MPS allocations from Domain A training
+        gc.collect()
+        if self.device == "mps":
+            torch.mps.empty_cache()
 
         # EWC setup
         if is_ewc_method(self.method):
@@ -407,6 +430,72 @@ class CPTTrainer:
                 reptile_interval=reptile_interval,
                 reptile_epsilon=reptile_epsilon
             )
+
+        # Bandit Replay setup
+        if is_bandit_replay_method(self.method):
+            if valid_tokens_a is None:
+                raise ValueError("valid_tokens_a required for bandit_replay method")
+            logger.info("Setting up Bandit Replay...")
+
+            # Build replay buffer (same infra as replay25)
+            buffer_size_pct = self.method_params.get("buffer_size_pct", 10)
+            self.replay_buffer = create_replay_buffer(
+                tokens_a,
+                buffer_size_pct=buffer_size_pct,
+                sequence_length=seq_len
+            )
+
+            # Build probe set from validation tokens
+            probe_size = self.method_params.get("probe_size", 100)
+            seed = self.config.get("seed", 42)
+            probe_set, probe_hash, _ = create_probe_set(
+                valid_tokens_a, probe_size, seq_len, seed
+            )
+
+            # Initialize bandit
+            arms = self.method_params.get("arms", [0.0, 0.1, 0.25, 0.5, 0.75])
+            initial_weights = self.method_params.get(
+                "initial_weights", [1, 1, 2, 1, 1]
+            )
+            self.bandit = BanditReplay(
+                model=self.model,
+                device=self.device,
+                replay_buffer=self.replay_buffer,
+                arms=arms,
+                initial_weights=initial_weights,
+                probe_set=probe_set,
+                probe_hash=probe_hash,
+                probe_interval=self.method_params.get("probe_interval", 50),
+                exp3_gamma=self.method_params.get("exp3_gamma", 0.1),
+                exp3_eta=self.method_params.get("exp3_eta", None),
+                seed=seed,
+            )
+            self.bandit.initialize()
+
+        # RMGS setup
+        if is_rmgs_method(self.method):
+            if valid_tokens_a is None:
+                raise ValueError("valid_tokens_a required for rmgs method")
+            logger.info("Setting up RMGS...")
+
+            # Build probe set from validation tokens
+            probe_size = self.method_params.get("probe_size", 100)
+            seed = self.config.get("seed", 42)
+            probe_set, probe_hash, _ = create_probe_set(
+                valid_tokens_a, probe_size, seq_len, seed
+            )
+
+            self.rmgs = RMGS(
+                model=self.model,
+                device=self.device,
+                probe_set=probe_set,
+                probe_hash=probe_hash,
+                probe_interval=self.method_params.get("probe_interval", 50),
+                ema_alpha=self.method_params.get("ema_alpha", 0.3),
+                beta=self.method_params.get("beta", 2.0),
+                min_scale=self.method_params.get("min_scale", 0.05),
+            )
+            self.rmgs.initialize()
 
     # =========================================================================
     # Domain B Training with CL Methods
@@ -477,6 +566,10 @@ class CPTTrainer:
             method_desc += f" (replay={replay_rate:.0%})"
         if is_mer_method(self.method):
             method_desc += f" (reptile every {self.mer.reptile_interval} steps)"
+        if is_bandit_replay_method(self.method) and self.bandit is not None:
+            method_desc += f" (bandit arms={len(self.bandit.arms)})"
+        if is_rmgs_method(self.method) and self.rmgs is not None:
+            method_desc += f" (beta={self.rmgs.beta}, min_scale={self.rmgs.min_scale})"
 
         logger.info(f"Training domain_b with {method_desc}: {len(tokens):,} tokens, "
                     f"{total_steps} steps, batch_size={effective_batch}")
@@ -503,6 +596,7 @@ class CPTTrainer:
         # Training loop
         start_time = time.time()
         global_step = 0
+        microbatch_count = 0
         total_loss = 0.0
         total_ewc_penalty = 0.0
         tokens_processed = 0
@@ -524,10 +618,18 @@ class CPTTrainer:
 
             input_ids = batch[0].to(self.device)
 
-            # Apply replay mixing if enabled
+            # Apply replay mixing if enabled (fixed-rate methods)
             if is_replay_method(self.method) and self.replay_buffer is not None:
                 input_ids, n_new, n_replay = create_mixed_batch(
                     input_ids, self.replay_buffer, replay_rate
+                )
+                replay_samples_used += n_replay
+
+            # Apply bandit-guided replay mixing (adaptive rate)
+            if is_bandit_replay_method(self.method) and self.bandit is not None:
+                bandit_rate = self.bandit.get_current_rate()
+                input_ids, n_new, n_replay = create_mixed_batch(
+                    input_ids, self.replay_buffer, bandit_rate
                 )
                 replay_samples_used += n_replay
 
@@ -540,7 +642,7 @@ class CPTTrainer:
             # only on current params θ, which don't change until
             # optimizer.step(), so repeating it every microbatch is
             # redundant and very expensive for large models (~1B params).
-            is_accum_boundary = (pbar.n + 1) % grad_accum == 0
+            is_accum_boundary = (microbatch_count + 1) % grad_accum == 0
             if is_ewc_method(self.method) and self.ewc is not None and is_accum_boundary:
                 ewc_penalty = self.ewc.penalty(ewc_lambda)
                 # ce_loss is scaled by 1/grad_accum; penalty is NOT scaled
@@ -554,9 +656,10 @@ class CPTTrainer:
             # Backward pass
             loss.backward()
             tokens_processed += input_ids.numel()
+            microbatch_count += 1
 
             # Gradient accumulation step
-            if (pbar.n + 1) % grad_accum == 0:
+            if microbatch_count % grad_accum == 0:
                 # Gradient clipping
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
 
@@ -571,6 +674,19 @@ class CPTTrainer:
                 if is_mer_method(self.method) and self.mer is not None:
                     if self.mer.step():
                         reptile_updates += 1
+
+                # Bandit Replay: evaluate probe and update bandit
+                if is_bandit_replay_method(self.method) and self.bandit is not None:
+                    self.bandit.step()
+
+                # RMGS: evaluate probe, update scale, modulate LR
+                if is_rmgs_method(self.method) and self.rmgs is not None:
+                    self.rmgs.step()
+                    scale = self.rmgs.get_scale()
+                    base_lr = scheduler.get_last_lr()[0]
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = base_lr * scale
+                    self._total_effective_lr += base_lr * scale
 
                 # Update resource tracking
                 self._update_resource_tracking()
@@ -598,6 +714,12 @@ class CPTTrainer:
                         log_entry["replay_samples"] = replay_samples_used
                     if is_mer_method(self.method):
                         log_entry["reptile_updates"] = reptile_updates
+                    if is_bandit_replay_method(self.method) and self.bandit is not None:
+                        log_entry["replay_rate"] = self.bandit.get_current_rate()
+                        log_entry["replay_samples"] = replay_samples_used
+                    if is_rmgs_method(self.method) and self.rmgs is not None:
+                        log_entry["gradient_scale"] = self.rmgs.get_scale()
+                        log_entry["effective_lr"] = scheduler.get_last_lr()[0] * self.rmgs.get_scale()
 
                     self.training_log.append(log_entry)
 
@@ -615,6 +737,10 @@ class CPTTrainer:
                     if is_mer_method(self.method) and self.mer is not None:
                         last_snap = self.mer.step_counter - (self.mer.step_counter % self.mer.reptile_interval)
                         cl_status.append(f"MER[updates={reptile_updates}] last_snap={last_snap}")
+                    if is_bandit_replay_method(self.method) and self.bandit is not None:
+                        cl_status.append(f"Bandit[rate={self.bandit.get_current_rate():.2f}, evals={len(self.bandit.arm_history)}]")
+                    if is_rmgs_method(self.method) and self.rmgs is not None:
+                        cl_status.append(f"RMGS[scale={self.rmgs.get_scale():.4f}, evals={len(self.rmgs.scale_history)}]")
                     if cl_status:
                         logger.info(f"  [CL] step={global_step}: {' | '.join(cl_status)}")
 
@@ -629,7 +755,7 @@ class CPTTrainer:
                     eval_callback(global_step, "domain_b")
                     self.model.train()
 
-            pbar.update(1)
+                pbar.update(1)
 
         pbar.close()
 
@@ -655,10 +781,36 @@ class CPTTrainer:
             stats["replay_samples_used"] = replay_samples_used
         if is_mer_method(self.method):
             stats["reptile_updates"] = reptile_updates
+        if is_bandit_replay_method(self.method):
+            stats["replay_samples_used"] = replay_samples_used
+        if is_rmgs_method(self.method):
+            self._domain_b_final_loss = stats["final_loss"]
 
         logger.info(f"Domain B training complete: {stats}")
 
         return stats
+
+    def get_rl_method_stats(self) -> Optional[Dict[str, Any]]:
+        """
+        Get RL method statistics for metrics.json under 'rl_method_stats'.
+
+        Returns None for non-RL methods.
+        """
+        if is_bandit_replay_method(self.method) and self.bandit is not None:
+            stats = self.bandit.get_stats()
+            # Cross-run metrics (require baseline comparison, computed in analysis)
+            stats["domain_b_adaptation_ratio"] = None
+            stats["tradeoff_efficiency"] = None
+            return stats
+        elif is_rmgs_method(self.method) and self.rmgs is not None:
+            stats = self.rmgs.get_stats()
+            stats["total_effective_lr_integral"] = self._total_effective_lr
+            stats["domain_b_training_loss_final"] = self._domain_b_final_loss
+            # Cross-run metrics (require baseline comparison, computed in analysis)
+            stats["domain_b_adaptation_ratio"] = None
+            stats["tradeoff_efficiency"] = None
+            return stats
+        return None
 
 
 def create_model(
