@@ -637,24 +637,22 @@ class CPTTrainer:
             outputs = self.model(input_ids, labels=input_ids)
             ce_loss = outputs.loss
 
-            # EWC penalty: compute ONCE per gradient step (on the last
-            # microbatch of each accumulation window).  The penalty depends
-            # only on current params θ, which don't change until
-            # optimizer.step(), so repeating it every microbatch is
-            # redundant and very expensive for large models (~1B params).
+            # CE loss: scaled by 1/grad_accum so accumulated grads = avg(∇CE).
+            loss = ce_loss / grad_accum
+            loss.backward()
+
+            # EWC penalty: applied ONCE per gradient step (last microbatch of
+            # each accumulation window). Uses analytic gradient via
+            # apply_penalty_grad() — bypasses autograd to avoid building a
+            # 4-6 GB intermediate graph for ~1B-param models, which on
+            # Apple-Silicon unified memory pushes runs into MPS swap (~6x
+            # slowdown observed pre-fix). Mathematically equivalent to the
+            # previous penalty().backward() path.
             is_accum_boundary = (microbatch_count + 1) % grad_accum == 0
             if is_ewc_method(self.method) and self.ewc is not None and is_accum_boundary:
-                ewc_penalty = self.ewc.penalty(ewc_lambda)
-                # ce_loss is scaled by 1/grad_accum; penalty is NOT scaled
-                # so its gradient contribution matches the pre-fix behaviour:
-                #   total = avg(∇CE) + ∇penalty
-                loss = ce_loss / grad_accum + ewc_penalty
-                total_ewc_penalty += ewc_penalty.item()
-            else:
-                loss = ce_loss / grad_accum
+                penalty_value = self.ewc.apply_penalty_grad(ewc_lambda)
+                total_ewc_penalty += penalty_value
 
-            # Backward pass
-            loss.backward()
             tokens_processed += input_ids.numel()
             microbatch_count += 1
 

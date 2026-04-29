@@ -77,8 +77,36 @@ def scan_phases(log_path):
     return phase
 
 
+def _parse_hms(s):
+    """Parse 'MM:SS' or 'HH:MM:SS' to seconds. Returns 0 on '?:??' or junk."""
+    parts = s.split(":")
+    try:
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    except ValueError:
+        pass
+    return 0
+
+
+# Match a tqdm bar tail: "step/total [elapsed<remaining, ...]"
+# Captures all four fields from the SAME line so derived rates stay consistent.
+_TQDM_PAT = re.compile(
+    r"(?P<step>\d+)/(?P<total>\d+)\s+\["
+    r"(?P<elapsed>\d+:\d+(?::\d+)?)<"
+    r"(?P<remaining>\d+:\d+(?::\d+)?|\?+)"
+)
+
+
 def parse_log(log_path):
-    """Parse run.log for phase, step, total, tok/s, loss, elapsed."""
+    """Parse run.log for phase, step, total, tok/s, loss, elapsed, remaining.
+
+    All progress fields are pulled from a SINGLE tqdm training line so
+    step/elapsed/remaining/tok_s remain mutually consistent. Lines without
+    'Training' in them (e.g. eval bars, LAMBADA, drift) are skipped to avoid
+    counter collisions.
+    """
     result = {
         "phase": "not_started",
         "step": 0,
@@ -86,6 +114,7 @@ def parse_log(log_path):
         "tok_per_sec": 0.0,
         "last_loss": 0.0,
         "elapsed_sec": 0.0,
+        "remaining_sec": 0.0,  # tqdm's own EWMA-smoothed estimate
         "pct": 0.0,
     }
 
@@ -96,44 +125,31 @@ def parse_log(log_path):
     if not lines:
         return result
 
-    # --- Step/total from tqdm (search recent lines, last match wins) ---
-    recent = lines[-100:]
-    for line in reversed(recent):
-        # tqdm: "Training ...: XX%|...| step/total [elapsed<remaining, ...]"
-        m = re.search(r"(\d+)/(\d+)\s*\[", line)
-        if m:
-            result["step"] = int(m.group(1))
-            result["total_steps"] = int(m.group(2))
-            break
+    # Walk backward through recent lines; first training-bar match wins.
+    matched_line = None
+    for line in reversed(lines[-200:]):
+        if "Training" not in line:
+            continue
+        m = _TQDM_PAT.search(line)
+        if not m:
+            continue
+        result["step"] = int(m.group("step"))
+        result["total_steps"] = int(m.group("total"))
+        result["elapsed_sec"] = _parse_hms(m.group("elapsed"))
+        rem = m.group("remaining")
+        result["remaining_sec"] = _parse_hms(rem) if ":" in rem else 0.0
+        matched_line = line
+        break
 
-    # --- tok/s from tqdm postfix ---
-    for line in reversed(recent):
-        m = re.search(r"tok/s[=:]\s*([\d.]+)", line)
+    # tok/s and loss must come from the SAME line as step/elapsed.
+    if matched_line is not None:
+        m = re.search(r"tok/s[=:]\s*([\d.]+)", matched_line)
         if m:
             result["tok_per_sec"] = float(m.group(1))
-            break
-
-    # --- loss from tqdm postfix ---
-    for line in reversed(recent):
-        m = re.search(r"loss[=:]\s*([\d.]+)", line)
+        m = re.search(r"loss[=:]\s*([\d.]+)", matched_line)
         if m:
             result["last_loss"] = float(m.group(1))
-            break
 
-    # --- elapsed from tqdm [MM:SS<...] or [HH:MM:SS<...] ---
-    for line in reversed(recent):
-        m = re.search(r"\[(\d+:\d+(?::\d+)?)<", line)
-        if m:
-            parts = m.group(1).split(":")
-            if len(parts) == 2:
-                result["elapsed_sec"] = int(parts[0]) * 60 + int(parts[1])
-            elif len(parts) == 3:
-                result["elapsed_sec"] = (
-                    int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                )
-            break
-
-    # --- Percentage ---
     if result["total_steps"] > 0:
         result["pct"] = round(100.0 * result["step"] / result["total_steps"], 1)
 
@@ -153,15 +169,20 @@ def format_duration(seconds):
 
 
 def compute_eta(progress):
-    """Estimate remaining time from step progress."""
+    """Prefer tqdm's own EWMA-smoothed remaining; fall back to cumulative avg.
+
+    tqdm's `<remaining` field reflects recent step rate (matches what you'd
+    see in a foreground tqdm bar). The cumulative-average fallback is only
+    used when tqdm hasn't emitted a remaining estimate yet (early steps).
+    """
+    rem = progress.get("remaining_sec", 0)
+    if rem > 0:
+        return rem
     step = progress["step"]
     total = progress["total_steps"]
     elapsed = progress["elapsed_sec"]
-
     if step > 0 and total > 0 and elapsed > 0:
-        remaining_steps = total - step
-        sec_per_step = elapsed / step
-        return remaining_steps * sec_per_step
+        return (total - step) * (elapsed / step)
     return 0
 
 

@@ -301,6 +301,41 @@ class EWC:
 
         return (ewc_lambda / 2) * penalty
 
+    def apply_penalty_grad(self, ewc_lambda: float = 100.0) -> float:
+        """
+        Add the analytic EWC gradient directly to param.grad and return the
+        scalar penalty value for logging.
+
+        For diagonal-Fisher EWC the gradient is exact and trivial:
+            ∂[(λ/2) F_i (θ_i - θ*_i)²] / ∂θ_i = λ F_i (θ_i - θ*_i)
+
+        Bypassing autograd avoids building a 4-6 GB graph of bf16
+        intermediates for ~1B-param models, which on Apple-Silicon unified
+        memory pushes Gemma3 1B / Llama3 1B into MPS swap (~6x slowdown
+        observed pre-fix). Mathematically equivalent to penalty().backward().
+
+        Must be called AFTER ce_loss.backward() and BEFORE optimizer.step().
+        """
+        if not self._computed:
+            return 0.0
+
+        # Accumulate scalar penalty tensors on-device, sync to CPU once at end.
+        penalty_acc = torch.zeros((), device=self.device)
+        with torch.no_grad():
+            for name, param in self.model.named_parameters():
+                if name not in self.fisher_diag or name not in self.theta_star:
+                    continue
+                if param.grad is None:
+                    param.grad = torch.zeros_like(param)
+                fisher = self.fisher_diag[name]
+                diff = param.detach() - self.theta_star[name]
+                # gradient: ∂/∂θ [(λ/2) F (θ - θ*)²] = λ F (θ - θ*)
+                param.grad.add_(fisher * diff, alpha=ewc_lambda)
+                # penalty value (for logging only): (F · diff²).sum()
+                penalty_acc += (fisher * diff * diff).sum()
+
+        return (ewc_lambda / 2.0) * penalty_acc.item()
+
     @property
     def is_computed(self) -> bool:
         """Check if Fisher has been computed."""
