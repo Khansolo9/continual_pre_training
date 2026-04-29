@@ -186,6 +186,44 @@ def compute_eta(progress):
     return 0
 
 
+def query_swap_free_mb():
+    """Query macOS swap free in MB. Returns None on non-mac or query failure.
+
+    Reads `sysctl vm.swapusage` and parses the human-readable line:
+      vm.swapusage: total = X.XXM  used = Y.YYM  free = Z.ZZM  (encrypted)
+    """
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["sysctl", "-n", "vm.swapusage"],
+            capture_output=True, text=True, timeout=2
+        )
+        if out.returncode != 0:
+            return None
+        # Find "free = N.NN[MG]" token
+        m = re.search(r"free\s*=\s*([\d.]+)([MG])", out.stdout)
+        if not m:
+            return None
+        val = float(m.group(1))
+        unit = m.group(2)
+        return val * 1024 if unit == "G" else val
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def format_pressure(swap_free_mb):
+    """Format swap pressure as a short status string with severity hint."""
+    if swap_free_mb is None:
+        return "n/a"
+    if swap_free_mb < 500:
+        return f"!{swap_free_mb:.0f}M!"  # red zone — OOM risk imminent
+    if swap_free_mb < 1024:
+        return f"~{swap_free_mb:.0f}M"   # yellow zone — pressure rising
+    if swap_free_mb < 4096:
+        return f"{swap_free_mb / 1024:.1f}G"
+    return f"{swap_free_mb / 1024:.0f}G"
+
+
 def detect_throttle(current_tok_s, history, threshold=0.30):
     """Detect thermal throttling: tok/s drop > threshold from rolling mean.
 
@@ -284,15 +322,26 @@ def main():
         if not args.once:
             print("\033[2J\033[H", end="")  # clear screen
 
+        # Sample swap pressure once per tick — applies to whole machine,
+        # not per-run, but displayed per-row for visibility.
+        swap_free_mb = query_swap_free_mb()
+        pressure_str = format_pressure(swap_free_mb)
+
+        # Compact pressure indicator on the header
+        pressure_header = (
+            f" | swap-free={pressure_str}" if swap_free_mb is not None else ""
+        )
+
         print(f"CPT Run Tracker | {now} | "
-              f"running={n_running} pending={n_pending} completed={n_done}")
-        print("=" * 120)
+              f"running={n_running} pending={n_pending} completed={n_done}"
+              f"{pressure_header}")
+        print("=" * 130)
         print(
             f"{'Run ID':<35} {'Status':<10} {'Phase':<18} "
             f"{'Progress':>10} {'Tok/s':>7} {'Loss':>8} "
-            f"{'Elapsed':>9} {'ETA':>9} {'Throttle':>8}"
+            f"{'Elapsed':>9} {'ETA':>9} {'Throttle':>8} {'Swap':>8}"
         )
-        print("-" * 120)
+        print("-" * 130)
 
         for row in rows:
             run_id = row["run_id"]
@@ -344,10 +393,15 @@ def main():
             )
             throttle_histories[run_id] = hist
 
+            # Per-row swap is the same global value; shown here for at-a-glance
+            # visibility next to throttle. Color/decor handled in format_pressure.
+            row_pressure = pressure_str if status == "running" else "—"
+
             print(
                 f"{run_id:<35} {status:<10} {phase_str:<18} "
                 f"{step_str:>10} {tok_str:>7} {loss_str:>8} "
-                f"{elapsed_str:>9} {eta_str:>9} {throttle_str:>8}"
+                f"{elapsed_str:>9} {eta_str:>9} {throttle_str:>8} "
+                f"{row_pressure:>8}"
             )
 
             # Write progress.json
