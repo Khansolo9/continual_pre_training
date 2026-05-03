@@ -99,6 +99,53 @@ _TQDM_PAT = re.compile(
 )
 
 
+def _windowed_step_duration_estimate(lines, window=20):
+    """Estimate steady-state per-step duration from the last `window` Training
+    bar lines, robust to pause/spike outliers.
+
+    Method: parse (step, elapsed_sec) pairs from up to ~3*window recent lines,
+    compute consecutive step durations as elapsed-time deltas, drop any duration
+    > 5x the median (likely SIGSTOP/swap-thrash artifact), and return the
+    trimmed median of what remains. None if insufficient data.
+
+    This is more accurate than tqdm's smoothed remaining for runs that have
+    pause events or memory-pressure spikes which would otherwise pollute the
+    EWMA window for many subsequent steps.
+    """
+    samples = []  # list of (step, elapsed_sec)
+    seen_steps = set()
+    for line in reversed(lines[-(3 * window + 50):]):
+        if "Training" not in line:
+            continue
+        m = _TQDM_PAT.search(line)
+        if not m:
+            continue
+        step = int(m.group("step"))
+        if step in seen_steps:
+            continue
+        seen_steps.add(step)
+        samples.append((step, _parse_hms(m.group("elapsed"))))
+        if len(samples) >= window + 5:
+            break
+    if len(samples) < 4:
+        return None
+    samples.sort(key=lambda s: s[0])  # ascending step
+    durations = [
+        b[1] - a[1] for a, b in zip(samples[:-1], samples[1:])
+        if b[0] == a[0] + 1 and b[1] > a[1]
+    ]
+    if not durations:
+        return None
+    sorted_d = sorted(durations)
+    median = sorted_d[len(sorted_d) // 2]
+    # drop outliers > 5x median (SIGSTOP gaps, swap-thrash spikes)
+    cleaned = [d for d in durations if d <= 5 * median]
+    if not cleaned:
+        return median
+    cleaned_sorted = sorted(cleaned)
+    return cleaned_sorted[len(cleaned_sorted) // 2]
+
+
 def parse_log(log_path):
     """Parse run.log for phase, step, total, tok/s, loss, elapsed, remaining.
 
@@ -106,6 +153,10 @@ def parse_log(log_path):
     step/elapsed/remaining/tok_s remain mutually consistent. Lines without
     'Training' in them (e.g. eval bars, LAMBADA, drift) are skipped to avoid
     counter collisions.
+
+    Adds a `windowed_sec_per_step` field: trimmed median of recent step
+    durations, robust to pause events and memory-pressure spikes. Used by
+    compute_eta() in preference to tqdm's smoothed remaining.
     """
     result = {
         "phase": "not_started",
@@ -115,6 +166,7 @@ def parse_log(log_path):
         "last_loss": 0.0,
         "elapsed_sec": 0.0,
         "remaining_sec": 0.0,  # tqdm's own EWMA-smoothed estimate
+        "windowed_sec_per_step": 0.0,  # trimmed-median of recent step times
         "pct": 0.0,
     }
 
@@ -150,6 +202,11 @@ def parse_log(log_path):
         if m:
             result["last_loss"] = float(m.group(1))
 
+    # Windowed per-step duration (robust to spikes and SIGSTOP gaps)
+    spi = _windowed_step_duration_estimate(lines, window=20)
+    if spi:
+        result["windowed_sec_per_step"] = spi
+
     if result["total_steps"] > 0:
         result["pct"] = round(100.0 * result["step"] / result["total_steps"], 1)
 
@@ -169,20 +226,30 @@ def format_duration(seconds):
 
 
 def compute_eta(progress):
-    """Prefer tqdm's own EWMA-smoothed remaining; fall back to cumulative avg.
+    """Estimate remaining time, robust to pause/spike artifacts.
 
-    tqdm's `<remaining` field reflects recent step rate (matches what you'd
-    see in a foreground tqdm bar). The cumulative-average fallback is only
-    used when tqdm hasn't emitted a remaining estimate yet (early steps).
+    Priority:
+      1. windowed trimmed-median sec/step over the last ~20 steps
+         (excludes SIGSTOP gaps and swap-thrash spikes)
+      2. tqdm's own EWMA-smoothed remaining (lags after a spike but
+         self-corrects within ~30 steps)
+      3. cumulative average (fallback when only a few steps have happened)
     """
-    rem = progress.get("remaining_sec", 0)
-    if rem > 0:
-        return rem
     step = progress["step"]
     total = progress["total_steps"]
     elapsed = progress["elapsed_sec"]
-    if step > 0 and total > 0 and elapsed > 0:
-        return (total - step) * (elapsed / step)
+    remaining_steps = total - step
+
+    spi = progress.get("windowed_sec_per_step", 0)
+    if spi > 0 and remaining_steps > 0:
+        return remaining_steps * spi
+
+    rem = progress.get("remaining_sec", 0)
+    if rem > 0:
+        return rem
+
+    if step > 0 and total > 0 and elapsed > 0 and remaining_steps > 0:
+        return remaining_steps * (elapsed / step)
     return 0
 
 
