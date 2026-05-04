@@ -253,11 +253,14 @@ def compute_eta(progress):
     return 0
 
 
-def query_swap_free_mb():
-    """Query macOS swap free in MB. Returns None on non-mac or query failure.
+def query_swap_usage():
+    """Query macOS swap state in MB. Returns (free_mb, total_mb) or None.
 
     Reads `sysctl vm.swapusage` and parses the human-readable line:
       vm.swapusage: total = X.XXM  used = Y.YYM  free = Z.ZZM  (encrypted)
+
+    On a fresh boot total is 0 (macOS allocates swap files on demand);
+    callers must distinguish that case from a full-swap state.
     """
     import subprocess
     try:
@@ -267,21 +270,32 @@ def query_swap_free_mb():
         )
         if out.returncode != 0:
             return None
-        # Find "free = N.NN[MG]" token
-        m = re.search(r"free\s*=\s*([\d.]+)([MG])", out.stdout)
-        if not m:
+        free_m = re.search(r"free\s*=\s*([\d.]+)([MG])", out.stdout)
+        total_m = re.search(r"total\s*=\s*([\d.]+)([MG])", out.stdout)
+        if not free_m or not total_m:
             return None
-        val = float(m.group(1))
-        unit = m.group(2)
-        return val * 1024 if unit == "G" else val
+        def _to_mb(value, unit):
+            return value * 1024 if unit == "G" else value
+        free_mb = _to_mb(float(free_m.group(1)), free_m.group(2))
+        total_mb = _to_mb(float(total_m.group(1)), total_m.group(2))
+        return (free_mb, total_mb)
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
         return None
 
 
-def format_pressure(swap_free_mb):
-    """Format swap pressure as a short status string with severity hint."""
-    if swap_free_mb is None:
+def format_pressure(usage):
+    """Format swap pressure as a short status string with severity hint.
+
+    `usage` is the (free_mb, total_mb) tuple from query_swap_usage(), or None.
+    """
+    if usage is None:
         return "n/a"
+    swap_free_mb, swap_total_mb = usage
+    # Fresh boot: macOS hasn't created any swap files yet — healthiest state.
+    # Distinguishing this from "swap exists and is exhausted" matters: both
+    # report free=0 but only the latter is OOM risk.
+    if swap_total_mb == 0:
+        return "0G"
     if swap_free_mb < 500:
         return f"!{swap_free_mb:.0f}M!"  # red zone — OOM risk imminent
     if swap_free_mb < 1024:
@@ -391,12 +405,12 @@ def main():
 
         # Sample swap pressure once per tick — applies to whole machine,
         # not per-run, but displayed per-row for visibility.
-        swap_free_mb = query_swap_free_mb()
-        pressure_str = format_pressure(swap_free_mb)
+        swap_usage = query_swap_usage()
+        pressure_str = format_pressure(swap_usage)
 
         # Compact pressure indicator on the header
         pressure_header = (
-            f" | swap-free={pressure_str}" if swap_free_mb is not None else ""
+            f" | swap-free={pressure_str}" if swap_usage is not None else ""
         )
 
         print(f"CPT Run Tracker | {now} | "
