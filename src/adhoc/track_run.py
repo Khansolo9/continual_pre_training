@@ -99,6 +99,53 @@ _TQDM_PAT = re.compile(
 )
 
 
+def _windowed_step_duration_estimate(lines, window=20):
+    """Estimate steady-state per-step duration from the last `window` Training
+    bar lines, robust to pause/spike outliers.
+
+    Method: parse (step, elapsed_sec) pairs from up to ~3*window recent lines,
+    compute consecutive step durations as elapsed-time deltas, drop any duration
+    > 5x the median (likely SIGSTOP/swap-thrash artifact), and return the
+    trimmed median of what remains. None if insufficient data.
+
+    This is more accurate than tqdm's smoothed remaining for runs that have
+    pause events or memory-pressure spikes which would otherwise pollute the
+    EWMA window for many subsequent steps.
+    """
+    samples = []  # list of (step, elapsed_sec)
+    seen_steps = set()
+    for line in reversed(lines[-(3 * window + 50):]):
+        if "Training" not in line:
+            continue
+        m = _TQDM_PAT.search(line)
+        if not m:
+            continue
+        step = int(m.group("step"))
+        if step in seen_steps:
+            continue
+        seen_steps.add(step)
+        samples.append((step, _parse_hms(m.group("elapsed"))))
+        if len(samples) >= window + 5:
+            break
+    if len(samples) < 4:
+        return None
+    samples.sort(key=lambda s: s[0])  # ascending step
+    durations = [
+        b[1] - a[1] for a, b in zip(samples[:-1], samples[1:])
+        if b[0] == a[0] + 1 and b[1] > a[1]
+    ]
+    if not durations:
+        return None
+    sorted_d = sorted(durations)
+    median = sorted_d[len(sorted_d) // 2]
+    # drop outliers > 5x median (SIGSTOP gaps, swap-thrash spikes)
+    cleaned = [d for d in durations if d <= 5 * median]
+    if not cleaned:
+        return median
+    cleaned_sorted = sorted(cleaned)
+    return cleaned_sorted[len(cleaned_sorted) // 2]
+
+
 def parse_log(log_path):
     """Parse run.log for phase, step, total, tok/s, loss, elapsed, remaining.
 
@@ -106,6 +153,10 @@ def parse_log(log_path):
     step/elapsed/remaining/tok_s remain mutually consistent. Lines without
     'Training' in them (e.g. eval bars, LAMBADA, drift) are skipped to avoid
     counter collisions.
+
+    Adds a `windowed_sec_per_step` field: trimmed median of recent step
+    durations, robust to pause events and memory-pressure spikes. Used by
+    compute_eta() in preference to tqdm's smoothed remaining.
     """
     result = {
         "phase": "not_started",
@@ -115,6 +166,7 @@ def parse_log(log_path):
         "last_loss": 0.0,
         "elapsed_sec": 0.0,
         "remaining_sec": 0.0,  # tqdm's own EWMA-smoothed estimate
+        "windowed_sec_per_step": 0.0,  # trimmed-median of recent step times
         "pct": 0.0,
     }
 
@@ -150,6 +202,11 @@ def parse_log(log_path):
         if m:
             result["last_loss"] = float(m.group(1))
 
+    # Windowed per-step duration (robust to spikes and SIGSTOP gaps)
+    spi = _windowed_step_duration_estimate(lines, window=20)
+    if spi:
+        result["windowed_sec_per_step"] = spi
+
     if result["total_steps"] > 0:
         result["pct"] = round(100.0 * result["step"] / result["total_steps"], 1)
 
@@ -169,21 +226,69 @@ def format_duration(seconds):
 
 
 def compute_eta(progress):
-    """Prefer tqdm's own EWMA-smoothed remaining; fall back to cumulative avg.
+    """Estimate remaining time, robust to pause/spike artifacts.
 
-    tqdm's `<remaining` field reflects recent step rate (matches what you'd
-    see in a foreground tqdm bar). The cumulative-average fallback is only
-    used when tqdm hasn't emitted a remaining estimate yet (early steps).
+    Priority:
+      1. windowed trimmed-median sec/step over the last ~20 steps
+         (excludes SIGSTOP gaps and swap-thrash spikes)
+      2. tqdm's own EWMA-smoothed remaining (lags after a spike but
+         self-corrects within ~30 steps)
+      3. cumulative average (fallback when only a few steps have happened)
     """
-    rem = progress.get("remaining_sec", 0)
-    if rem > 0:
-        return rem
     step = progress["step"]
     total = progress["total_steps"]
     elapsed = progress["elapsed_sec"]
-    if step > 0 and total > 0 and elapsed > 0:
-        return (total - step) * (elapsed / step)
+    remaining_steps = total - step
+
+    spi = progress.get("windowed_sec_per_step", 0)
+    if spi > 0 and remaining_steps > 0:
+        return remaining_steps * spi
+
+    rem = progress.get("remaining_sec", 0)
+    if rem > 0:
+        return rem
+
+    if step > 0 and total > 0 and elapsed > 0 and remaining_steps > 0:
+        return remaining_steps * (elapsed / step)
     return 0
+
+
+def query_swap_free_mb():
+    """Query macOS swap free in MB. Returns None on non-mac or query failure.
+
+    Reads `sysctl vm.swapusage` and parses the human-readable line:
+      vm.swapusage: total = X.XXM  used = Y.YYM  free = Z.ZZM  (encrypted)
+    """
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["sysctl", "-n", "vm.swapusage"],
+            capture_output=True, text=True, timeout=2
+        )
+        if out.returncode != 0:
+            return None
+        # Find "free = N.NN[MG]" token
+        m = re.search(r"free\s*=\s*([\d.]+)([MG])", out.stdout)
+        if not m:
+            return None
+        val = float(m.group(1))
+        unit = m.group(2)
+        return val * 1024 if unit == "G" else val
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def format_pressure(swap_free_mb):
+    """Format swap pressure as a short status string with severity hint."""
+    if swap_free_mb is None:
+        return "n/a"
+    if swap_free_mb < 500:
+        return f"!{swap_free_mb:.0f}M!"  # red zone — OOM risk imminent
+    if swap_free_mb < 1024:
+        return f"~{swap_free_mb:.0f}M"   # yellow zone — pressure rising
+    if swap_free_mb < 4096:
+        return f"{swap_free_mb / 1024:.1f}G"
+    return f"{swap_free_mb / 1024:.0f}G"
 
 
 def detect_throttle(current_tok_s, history, threshold=0.30):
@@ -284,15 +389,26 @@ def main():
         if not args.once:
             print("\033[2J\033[H", end="")  # clear screen
 
+        # Sample swap pressure once per tick — applies to whole machine,
+        # not per-run, but displayed per-row for visibility.
+        swap_free_mb = query_swap_free_mb()
+        pressure_str = format_pressure(swap_free_mb)
+
+        # Compact pressure indicator on the header
+        pressure_header = (
+            f" | swap-free={pressure_str}" if swap_free_mb is not None else ""
+        )
+
         print(f"CPT Run Tracker | {now} | "
-              f"running={n_running} pending={n_pending} completed={n_done}")
-        print("=" * 120)
+              f"running={n_running} pending={n_pending} completed={n_done}"
+              f"{pressure_header}")
+        print("=" * 130)
         print(
             f"{'Run ID':<35} {'Status':<10} {'Phase':<18} "
             f"{'Progress':>10} {'Tok/s':>7} {'Loss':>8} "
-            f"{'Elapsed':>9} {'ETA':>9} {'Throttle':>8}"
+            f"{'Elapsed':>9} {'ETA':>9} {'Throttle':>8} {'Swap':>8}"
         )
-        print("-" * 120)
+        print("-" * 130)
 
         for row in rows:
             run_id = row["run_id"]
@@ -344,10 +460,15 @@ def main():
             )
             throttle_histories[run_id] = hist
 
+            # Per-row swap is the same global value; shown here for at-a-glance
+            # visibility next to throttle. Color/decor handled in format_pressure.
+            row_pressure = pressure_str if status == "running" else "—"
+
             print(
                 f"{run_id:<35} {status:<10} {phase_str:<18} "
                 f"{step_str:>10} {tok_str:>7} {loss_str:>8} "
-                f"{elapsed_str:>9} {eta_str:>9} {throttle_str:>8}"
+                f"{elapsed_str:>9} {eta_str:>9} {throttle_str:>8} "
+                f"{row_pressure:>8}"
             )
 
             # Write progress.json

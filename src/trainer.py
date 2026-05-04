@@ -341,6 +341,27 @@ class CPTTrainer:
         logger.info(f"Checkpoint loaded: {path}")
         return checkpoint
 
+    def _prune_old_snapshots(self, keep: int = 2):
+        """Keep only the `keep` most-recent intermediate Domain-B snapshots.
+
+        Files matching `theta_AB_step*.pt` (intermediate checkpoints written
+        every domain_b_checkpoint_every_steps) are sorted by mtime and the
+        oldest are deleted. The final `theta_AB.pt` and `theta_A.pt` are
+        never touched by this method.
+        """
+        ckpt_dir = self.output_dir / "checkpoints"
+        if not ckpt_dir.exists():
+            return
+        snaps = sorted(
+            ckpt_dir.glob("theta_AB_step*.pt"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        for old in snaps[:-keep]:
+            try:
+                old.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to prune snapshot {old}: {e}")
+
     def get_resource_stats(self) -> Dict[str, Any]:
         """Get resource usage statistics."""
         peak_vram_gb = (self.peak_vram_mb / 1024) if self.peak_vram_mb is not None else None
@@ -667,6 +688,39 @@ class CPTTrainer:
 
                 global_step += 1
                 total_loss += loss.item() * grad_accum
+
+                # Periodic MPS cache release: prevents allocator fragmentation
+                # accumulation on multi-hour 1B-class runs. Bit-equivalent to
+                # not calling it (no tensor data is altered); only frees the
+                # allocator's free-block list so cached blocks can return to
+                # the OS. Cost is small (<100 ms per call). Disabled when not
+                # on MPS or when the empty_cache_every config is 0/missing.
+                empty_cache_every = self.config.get(
+                    "empty_cache_every_steps", 200
+                )
+                if (
+                    empty_cache_every > 0
+                    and global_step % empty_cache_every == 0
+                    and self.device == "mps"
+                    and hasattr(torch.mps, "empty_cache")
+                ):
+                    torch.mps.empty_cache()
+
+                # Mid-Domain-B checkpointing: lets us recover from an OOM
+                # kill mid-run instead of losing 5-10h of work. The final
+                # theta_AB.pt is still written on successful completion;
+                # these intermediate snapshots are pruned to keep only the
+                # latest two (~4 GB disk for 1B model in bf16).
+                ckpt_every = self.config.get(
+                    "domain_b_checkpoint_every_steps", 200
+                )
+                if ckpt_every > 0 and global_step % ckpt_every == 0:
+                    snap_name = f"theta_AB_step{global_step}"
+                    self.save_checkpoint(
+                        snap_name,
+                        extra_info={"domain": "domain_b", "step": global_step}
+                    )
+                    self._prune_old_snapshots(keep=2)
 
                 # MER: Apply Reptile update if at interval
                 if is_mer_method(self.method) and self.mer is not None:
