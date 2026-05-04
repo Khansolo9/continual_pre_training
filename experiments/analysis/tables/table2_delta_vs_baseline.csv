@@ -1,4 +1,0 @@
-Method,Seed,Δ Forgetting %,Δ PPL_A After,Δ PPL_B After,Δ LAMBADA After,Δ Rep-4 After,Δ Rep-8 After,Δ Drift After,Δ Total Hours,Δ Tokens/sec
-replay25,42,-79.52%,-18.26,+0.89,+0.019,-0.1983,-0.2303,+0.0223,-0.19h,+146
-mer25,42,-82.53%,-18.95,+5.60,+0.033,-0.1449,-0.1700,-0.0250,-0.18h,+77
-ewc,42,-53.55%,-12.30,+0.90,+0.058,+0.0092,+0.0087,-0.0027,-0.02h,-51
