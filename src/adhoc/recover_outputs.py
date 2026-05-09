@@ -188,10 +188,8 @@ def main() -> int:
         "prompts_toxicity_version": None,
     }
 
-    # anomalies
+    # anomalies (high_rep4 retired 2026-05-09 — was a domain artifact)
     runner.results["anomalies"] = []
-    if runner.results["metrics"]["rep4_after"] > 0.25:
-        runner.results["anomalies"].append("high_rep4")
     peak_vram = resource_stats.get("peak_vram_gb")
     if peak_vram is not None and peak_vram > 7.5:
         runner.results["anomalies"].append("oom_recovery")

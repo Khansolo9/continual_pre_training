@@ -273,9 +273,7 @@ def recover_run(run_id: str, project_root: Path, seed: int = 0):
 
     results["method_params"] = config.get("method_params", {})
 
-    rep4_after = results["metrics"].get("rep4_after")
-    if rep4_after is not None and rep4_after > 0.25:
-        results["anomalies"].append("high_rep4")
+    # high_rep4 anomaly flag retired 2026-05-09 (was a domain artifact, not a real signal).
 
     results["notes"] = "Recovered from checkpoints (eval-only recovery tool). Drift baseline set at theta_A, not init."
 

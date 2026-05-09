@@ -12,5 +12,17 @@
 | Qwen3 (0.6B) | Replay-25%    |   1 |        10.6 |         593 |            1   |
 | Qwen3 (0.6B) | MER-lite      |   1 |         9.3 |         687 |            0.7 |
 | Qwen3 (0.6B) | EWC           |   1 |         8.7 |         750 |            0.6 |
+| Qwen3 (0.6B) | Bandit Replay |   1 |         8.8 |         731 |            1   |
+| Qwen3 (0.6B) | RMGS          |   1 |         8.9 |         716 |            1.1 |
 | Gemma3 (1B)  | Baseline      |   2 |        19.7 |         336 |            0.8 |
+| Gemma3 (1B)  | Replay-25%    |   1 |        16   |         402 |            0.8 |
+| Gemma3 (1B)  | MER-lite      |   1 |        14.1 |         452 |            0.8 |
+| Gemma3 (1B)  | EWC           |   1 |        29.2 |         333 |            0.8 |
+| Gemma3 (1B)  | Bandit Replay |   1 |        12.5 |         522 |            0.9 |
+| Gemma3 (1B)  | RMGS          |   1 |        11.6 |         567 |            0.9 |
 | Llama3 (1B)  | Baseline      |   2 |        12.9 |         483 |            0.6 |
+| Llama3 (1B)  | Replay-25%    |   1 |        11   |         568 |            0.8 |
+| Llama3 (1B)  | MER-lite      |   1 |        11.9 |         517 |            0.7 |
+| Llama3 (1B)  | EWC           |   1 |        37.5 |         326 |            0.6 |
+| Llama3 (1B)  | Bandit Replay |   1 |        11.2 |         556 |            0.9 |
+| Llama3 (1B)  | RMGS          |   1 |        11.1 |         557 |            0.8 |

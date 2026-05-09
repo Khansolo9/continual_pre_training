@@ -152,7 +152,18 @@ def load_all_runs(project_root: Path) -> pd.DataFrame:
             if isinstance(v, (int, float)):
                 row[k] = v
 
-        row["anomalies"] = ",".join(data.get("anomalies", []))
+        # RL-method stats (bandit_replay, rmgs) — pulled from rl_method_stats block
+        rl_stats = data.get("rl_method_stats") or {}
+        for k, v in rl_stats.items():
+            if isinstance(v, (int, float)):
+                row[f"rl_{k}"] = v
+
+        # Filter out the retired high_rep4 flag (see docs/PROJECT_STATUS.md
+        # 2026-05-09 retirement note). Frozen metrics.json files keep it for
+        # audit but the analysis pipeline no longer surfaces it.
+        retired_anomalies = {"high_rep4"}
+        anomalies = [a for a in data.get("anomalies", []) if a not in retired_anomalies]
+        row["anomalies"] = ",".join(anomalies)
         rows.append(row)
 
     df = pd.DataFrame(rows)
@@ -706,6 +717,487 @@ def fig8_dashboard(df: pd.DataFrame, out: Path) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# EXTENDED ANALYSES — added 2026-05-09 to fill out the analysis dir
+# ═══════════════════════════════════════════════════════════════════════════
+
+def table6_method_consistency(df: pd.DataFrame, out: Path) -> None:
+    """T6: Method consistency across models — std/CV of forgetting per method.
+
+    Directly supports the "no method wins everywhere" framing: a method that
+    works on every model has low std and low CV; a method that fails
+    unpredictably has high values.
+    """
+    methods = [m for m in METHOD_ORDER if m != "baseline"]
+    rows = []
+    for method in methods:
+        sub = df[df["method"] == method]
+        if sub.empty:
+            continue
+        f = sub["forgetting_pct"]
+        n = len(f)
+        mean = f.mean()
+        std = f.std() if n > 1 else 0.0
+        cv = (std / mean * 100) if mean > 0 else 0.0
+        rows.append({
+            "Method": METHOD_LABELS[method],
+            "N models": int(sub["model_family"].nunique()),
+            "Mean forget %": f"{mean:.2f}",
+            "Std forget %": f"{std:.2f}",
+            "CV %": f"{cv:.1f}",
+            "Min forget %": f"{f.min():.2f}",
+            "Max forget %": f"{f.max():.2f}",
+            "Range": f"{f.max() - f.min():.2f}",
+        })
+    rows.sort(key=lambda r: float(r["CV %"]))
+    t = pd.DataFrame(rows)
+    t.to_csv(out / "table6_method_consistency.csv", index=False)
+
+    md = "# Table 6: Method Consistency Across Models\n\n"
+    md += "Lower CV = method behaves consistently across architectures. "
+    md += "Higher CV = effectiveness depends on the model.\n\n"
+    md += t.to_markdown(index=False)
+    md += "\n"
+    (out / "table6_method_consistency.md").write_text(md)
+    print(f"  -> table6_method_consistency ({len(t)} methods)")
+
+
+def table7_generation_drift(df: pd.DataFrame, out: Path) -> None:
+    """T7: Generation drift profile — Rep4/Rep8/JS/vocab before vs after."""
+    rows = []
+    for family in MODEL_ORDER:
+        for method in METHOD_ORDER:
+            sub = df[(df["model_family"] == family) & (df["method"] == method)]
+            if sub.empty:
+                continue
+            r = sub.iloc[0]
+            rows.append({
+                "Model": MODEL_LABELS[family],
+                "Method": METHOD_LABELS[method],
+                "Rep4 before": f"{r.get('rep4_before', float('nan')):.3f}",
+                "Rep4 after": f"{r.get('rep4_after', float('nan')):.3f}",
+                "Δ Rep4": f"{r.get('rep4_after', 0) - r.get('rep4_before', 0):+.3f}",
+                "Rep8 before": f"{r.get('rep8_before', float('nan')):.3f}",
+                "Rep8 after": f"{r.get('rep8_after', float('nan')):.3f}",
+                "JS before": f"{r.get('drift_value_before', float('nan')):.3f}",
+                "JS after": f"{r.get('drift_value_after', float('nan')):.3f}",
+                "Δ JS": f"{r.get('drift_value_after', 0) - r.get('drift_value_before', 0):+.3f}",
+                "Vocab Δ": f"{r.get('vocab_overlap_after', 0) - r.get('vocab_overlap_before', 0):+.3f}",
+            })
+    t = pd.DataFrame(rows)
+    t.to_csv(out / "table7_generation_drift.csv", index=False)
+
+    md = "# Table 7: Generation Drift Profile (before vs after CPT)\n\n"
+    md += "Δ Rep4 > 0 means generation became more repetitive; "
+    md += "Δ JS > 0 means distribution drifted further from the reference set.\n\n"
+    md += t.to_markdown(index=False)
+    md += "\n"
+    (out / "table7_generation_drift.md").write_text(md)
+    print(f"  -> table7_generation_drift ({len(t)} rows)")
+
+
+def table8_adaptation_ranking(df: pd.DataFrame, out: Path) -> None:
+    """T8: Adaptation ranking by PPL_B (Domain B perplexity, lower=better).
+
+    Complements the forgetting ranking: a method that prevents forgetting
+    but fails to learn Domain B is not actually useful.
+    """
+    rows = []
+    for family in MODEL_ORDER:
+        sub = df[df["model_family"] == family]
+        if sub.empty:
+            continue
+        sub = sub.sort_values("ppl_b_after")
+        for rank, (_, r) in enumerate(sub.iterrows(), start=1):
+            rows.append({
+                "Model": MODEL_LABELS[family],
+                "Rank (PPL_B)": rank,
+                "Method": METHOD_LABELS.get(r["method"], r["method"]),
+                "PPL_B after": f"{r['ppl_b_after']:.2f}",
+                "PPL_A after": f"{r['ppl_a_after']:.2f}",
+                "Forget %": f"{r['forgetting_pct']:.2f}",
+            })
+    t = pd.DataFrame(rows)
+    t.to_csv(out / "table8_adaptation_ranking.csv", index=False)
+
+    md = "# Table 8: Adaptation Ranking by PPL_B (lower is better)\n\n"
+    md += "A method that minimises forgetting but doesn't learn Domain B "
+    md += "is not actually useful. This table ranks by Domain B PPL after CPT.\n\n"
+    md += t.to_markdown(index=False)
+    md += "\n"
+    (out / "table8_adaptation_ranking.md").write_text(md)
+    print(f"  -> table8_adaptation_ranking ({len(t)} rows)")
+
+
+def _is_pareto_optimal(points: np.ndarray) -> np.ndarray:
+    """Return mask of non-dominated points where lower is better on all axes."""
+    n = len(points)
+    is_efficient = np.ones(n, dtype=bool)
+    for i in range(n):
+        if not is_efficient[i]:
+            continue
+        # i is dominated if any other point j has all coords <= i and at least one <
+        for j in range(n):
+            if i == j:
+                continue
+            if np.all(points[j] <= points[i]) and np.any(points[j] < points[i]):
+                is_efficient[i] = False
+                break
+    return is_efficient
+
+
+def table9_pareto_frontier(df: pd.DataFrame, out: Path) -> None:
+    """T9: Pareto frontier per model on (forgetting, wall-time)."""
+    rows = []
+    for family in MODEL_ORDER:
+        sub = df[df["model_family"] == family]
+        if sub.empty or len(sub) < 2:
+            continue
+        pts = sub[["forgetting_pct", "total_hours"]].to_numpy()
+        mask = _is_pareto_optimal(pts)
+        for (_, r), eff in zip(sub.iterrows(), mask):
+            rows.append({
+                "Model": MODEL_LABELS[family],
+                "Method": METHOD_LABELS.get(r["method"], r["method"]),
+                "Forget %": f"{r['forgetting_pct']:.2f}",
+                "Hours": f"{r['total_hours']:.2f}",
+                "PPL_B after": f"{r['ppl_b_after']:.2f}",
+                "Pareto-optimal": "✓" if eff else "",
+            })
+    t = pd.DataFrame(rows)
+    t.to_csv(out / "table9_pareto_frontier.csv", index=False)
+
+    md = "# Table 9: Pareto Frontier (forgetting × wall-time)\n\n"
+    md += "Pareto-optimal: no other run on the same model achieves both "
+    md += "less forgetting AND less compute time. These are the rational "
+    md += "method choices for a practitioner who cares about both.\n\n"
+    md += t.to_markdown(index=False)
+    md += "\n"
+    (out / "table9_pareto_frontier.md").write_text(md)
+    print(f"  -> table9_pareto_frontier ({len(t)} rows)")
+
+
+def table10_rl_internals(df: pd.DataFrame, out: Path) -> None:
+    """T10: RL method internals — bandit and RMGS internal state per run."""
+    rl_methods = ["bandit_replay", "rmgs"]
+    sub = df[df["method"].isin(rl_methods)].copy()
+    if sub.empty:
+        print("  SKIP table10: no RL method runs found")
+        return
+
+    rows = []
+    for _, r in sub.iterrows():
+        rows.append({
+            "Model": MODEL_LABELS.get(r["model_family"], r["model_family"]),
+            "Method": METHOD_LABELS.get(r["method"], r["method"]),
+            "Forget %": f"{r['forgetting_pct']:.2f}",
+            "Mean replay rate": f"{r['rl_mean_replay_rate']:.3f}"
+                if "rl_mean_replay_rate" in r and pd.notna(r.get("rl_mean_replay_rate")) else "—",
+            "Replay rate std": f"{r['rl_replay_rate_std']:.3f}"
+                if "rl_replay_rate_std" in r and pd.notna(r.get("rl_replay_rate_std")) else "—",
+            "Mean grad scale": f"{r['rl_mean_gradient_scale']:.3f}"
+                if "rl_mean_gradient_scale" in r and pd.notna(r.get("rl_mean_gradient_scale")) else "—",
+            "Grad scale std": f"{r['rl_scale_std']:.3f}"
+                if "rl_scale_std" in r and pd.notna(r.get("rl_scale_std")) else "—",
+            "N evaluations": int(r["rl_n_evaluations"])
+                if "rl_n_evaluations" in r and pd.notna(r.get("rl_n_evaluations")) else "—",
+        })
+    t = pd.DataFrame(rows)
+    t.to_csv(out / "table10_rl_internals.csv", index=False)
+
+    md = "# Table 10: RL Method Internal State\n\n"
+    md += "Headline patterns to look for:\n"
+    md += "- bandit_replay mean replay rate consistent across models?\n"
+    md += "- RMGS mean grad scale far from 1.0 (active throttling) or near 1.0 (rare throttling)?\n\n"
+    md += t.to_markdown(index=False)
+    md += "\n"
+    (out / "table10_rl_internals.md").write_text(md)
+    print(f"  -> table10_rl_internals ({len(t)} rows)")
+
+
+# T11 (anomaly catalog) removed 2026-05-09: after retiring high_rep4 the
+# table had no rows. The anomalies column remains in summary_table.csv for
+# any future genuine flag (oom_recovery, nan_loss, etc.).
+
+
+# --------------------------------------------------------------------------
+# New figures
+# --------------------------------------------------------------------------
+
+def fig9_method_consistency(df: pd.DataFrame, out: Path) -> None:
+    """F9: Method consistency boxplot — distribution of forgetting per method."""
+    methods = [m for m in METHOD_ORDER if m != "baseline" and m in df["method"].values]
+    if not methods:
+        print("  SKIP fig9: no method runs")
+        return
+    fig, ax = plt.subplots(figsize=(10, 6))
+    data, labels, colors = [], [], []
+    for m in methods:
+        sub = df[df["method"] == m]
+        if sub.empty:
+            continue
+        data.append(sub["forgetting_pct"].values)
+        labels.append(METHOD_LABELS[m])
+        colors.append(METHOD_COLORS[m])
+
+    bp = ax.boxplot(data, labels=labels, patch_artist=True, widths=0.55,
+                    medianprops={"color": "black", "linewidth": 1.5})
+    for patch, c in zip(bp["boxes"], colors):
+        patch.set_facecolor(c)
+        patch.set_alpha(0.65)
+
+    # Overlay individual points colored by model
+    for i, m in enumerate(methods):
+        sub = df[df["method"] == m]
+        for _, r in sub.iterrows():
+            ax.scatter(i + 1, r["forgetting_pct"],
+                       color=MODEL_COLORS.get(r["model_family"], "gray"),
+                       edgecolor="black", s=60, zorder=3)
+
+    # Legend for model colors
+    legend_handles = [mpatches.Patch(color=MODEL_COLORS[f], label=MODEL_LABELS[f])
+                      for f in MODEL_ORDER if f in df["model_family"].values]
+    ax.legend(handles=legend_handles, loc="upper right", title="Model")
+
+    ax.set_ylabel("Forgetting (%)", fontweight="bold")
+    ax.set_title("Forgetting Distribution per Method (across models)", fontweight="bold")
+    ax.set_ylim(bottom=0)
+    plt.xticks(rotation=15, ha="right")
+
+    save_figure(fig, out / "fig9_method_consistency")
+    print("  -> fig9_method_consistency")
+
+
+def fig10_pareto_frontier(df: pd.DataFrame, out: Path) -> None:
+    """F10: Pareto frontier per model on (forgetting, wall-time)."""
+    families = [f for f in MODEL_ORDER if f in df["model_family"].values]
+    n = len(families)
+    fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4.8), sharey=False)
+    if n == 1:
+        axes = [axes]
+    for ax, family in zip(axes, families):
+        sub = df[df["model_family"] == family].copy()
+        pts = sub[["forgetting_pct", "total_hours"]].to_numpy()
+        mask = _is_pareto_optimal(pts)
+        # Plot all points
+        for (_, r), eff in zip(sub.iterrows(), mask):
+            ax.scatter(r["total_hours"], r["forgetting_pct"],
+                       color=METHOD_COLORS.get(r["method"], "gray"),
+                       s=130 if eff else 60,
+                       edgecolor="black",
+                       linewidth=1.5 if eff else 0.5,
+                       zorder=3 if eff else 2)
+            ax.annotate(METHOD_LABELS.get(r["method"], r["method"]),
+                        (r["total_hours"], r["forgetting_pct"]),
+                        xytext=(5, 4), textcoords="offset points", fontsize=8)
+
+        # Connect Pareto-optimal points with a line
+        if mask.any():
+            efficient = sub[mask].sort_values("total_hours")
+            ax.plot(efficient["total_hours"], efficient["forgetting_pct"],
+                    "k--", alpha=0.4, linewidth=1.2, zorder=1)
+        ax.set_title(MODEL_LABELS[family], fontweight="bold")
+        ax.set_xlabel("Wall time (hours)")
+        ax.set_ylabel("Forgetting (%)")
+        ax.set_ylim(bottom=0)
+
+    fig.suptitle("Pareto Frontier: Forgetting × Compute (per model)",
+                 fontweight="bold", y=1.02)
+    plt.tight_layout()
+    save_figure(fig, out / "fig10_pareto_frontier")
+    print("  -> fig10_pareto_frontier")
+
+
+def fig11_rep4_change_heatmap(df: pd.DataFrame, out: Path) -> None:
+    """F11: Δ Rep4 (post-pre) heatmap — model × method."""
+    methods = [m for m in METHOD_ORDER if m in df["method"].values]
+    families = [f for f in MODEL_ORDER if f in df["model_family"].values]
+    if not methods or not families:
+        return
+    grid = np.full((len(families), len(methods)), np.nan)
+    for i, fam in enumerate(families):
+        for j, m in enumerate(methods):
+            sub = df[(df["model_family"] == fam) & (df["method"] == m)]
+            if sub.empty:
+                continue
+            r = sub.iloc[0]
+            if pd.notna(r.get("rep4_before")) and pd.notna(r.get("rep4_after")):
+                grid[i, j] = r["rep4_after"] - r["rep4_before"]
+
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    cmap = plt.get_cmap("RdYlGn_r")  # red = worse (more repetition)
+    vlim = max(0.001, np.nanmax(np.abs(grid)))
+    im = ax.imshow(grid, aspect="auto", cmap=cmap, vmin=-vlim, vmax=vlim)
+    ax.set_xticks(range(len(methods)))
+    ax.set_xticklabels([METHOD_LABELS[m] for m in methods], rotation=15, ha="right")
+    ax.set_yticks(range(len(families)))
+    ax.set_yticklabels([MODEL_LABELS[f] for f in families])
+    for i in range(len(families)):
+        for j in range(len(methods)):
+            v = grid[i, j]
+            if np.isnan(v):
+                txt = "—"
+            else:
+                txt = f"{v:+.2f}"
+            ax.text(j, i, txt, ha="center", va="center", fontsize=9,
+                    color="black")
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("Δ Rep-4 (post − pre)\n(positive = more repetitive)")
+    ax.set_title("Generation Repetition Change after CPT", fontweight="bold")
+    plt.tight_layout()
+    save_figure(fig, out / "fig11_rep4_change_heatmap")
+    print("  -> fig11_rep4_change_heatmap")
+
+
+def fig12_retention_adaptation_pareto(df: pd.DataFrame, out: Path) -> None:
+    """F12: PPL_A (retention) vs PPL_B (adaptation) Pareto, per-model panels."""
+    families = [f for f in MODEL_ORDER if f in df["model_family"].values]
+    n = len(families)
+    fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4.8))
+    if n == 1:
+        axes = [axes]
+    for ax, family in zip(axes, families):
+        sub = df[df["model_family"] == family].copy()
+        if sub.empty:
+            continue
+        pts = sub[["ppl_a_after", "ppl_b_after"]].to_numpy()
+        mask = _is_pareto_optimal(pts)
+        for (_, r), eff in zip(sub.iterrows(), mask):
+            ax.scatter(r["ppl_a_after"], r["ppl_b_after"],
+                       color=METHOD_COLORS.get(r["method"], "gray"),
+                       s=130 if eff else 60,
+                       edgecolor="black",
+                       linewidth=1.5 if eff else 0.5)
+            ax.annotate(METHOD_LABELS.get(r["method"], r["method"]),
+                        (r["ppl_a_after"], r["ppl_b_after"]),
+                        xytext=(5, 4), textcoords="offset points", fontsize=8)
+        ax.set_title(MODEL_LABELS[family], fontweight="bold")
+        ax.set_xlabel("PPL_A after (retention; lower = better)")
+        ax.set_ylabel("PPL_B after (adaptation; lower = better)")
+    fig.suptitle("Retention × Adaptation Pareto (per model)",
+                 fontweight="bold", y=1.02)
+    plt.tight_layout()
+    save_figure(fig, out / "fig12_retention_adaptation_pareto")
+    print("  -> fig12_retention_adaptation_pareto")
+
+
+def fig13_rl_internals(df: pd.DataFrame, out: Path) -> None:
+    """F13: RL internals — bandit replay rate + RMGS grad scale per model."""
+    bandit = df[df["method"] == "bandit_replay"]
+    rmgs = df[df["method"] == "rmgs"]
+    if bandit.empty and rmgs.empty:
+        return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 4.8))
+
+    # Left: bandit mean replay rate by model
+    if not bandit.empty and "rl_mean_replay_rate" in bandit.columns:
+        b = bandit.dropna(subset=["rl_mean_replay_rate"])
+        x = np.arange(len(b))
+        rates = b["rl_mean_replay_rate"].to_numpy()
+        stds = b.get("rl_replay_rate_std", pd.Series([0] * len(b))).to_numpy()
+        colors = [MODEL_COLORS.get(m, "gray") for m in b["model_family"]]
+        ax1.bar(x, rates, yerr=stds, color=colors, edgecolor="black", capsize=4)
+        for xi, r in zip(x, rates):
+            ax1.text(xi, r + 0.01, f"{r:.3f}", ha="center", fontsize=9, fontweight="bold")
+        ax1.axhline(0.25, color="black", linestyle=":", linewidth=1, label="static replay25 default")
+        ax1.set_xticks(x)
+        ax1.set_xticklabels([MODEL_LABELS.get(m, m) for m in b["model_family"]],
+                            rotation=15, ha="right")
+        ax1.set_ylabel("Mean replay rate (with std)")
+        ax1.set_title("bandit_replay: learned replay rate per model", fontweight="bold")
+        ax1.legend(loc="lower right", fontsize=8)
+        ax1.set_ylim(0, max(0.6, rates.max() + 0.1))
+
+    # Right: RMGS mean grad scale by model
+    if not rmgs.empty and "rl_mean_gradient_scale" in rmgs.columns:
+        r_ = rmgs.dropna(subset=["rl_mean_gradient_scale"])
+        x = np.arange(len(r_))
+        scales = r_["rl_mean_gradient_scale"].to_numpy()
+        stds = r_.get("rl_scale_std", pd.Series([0] * len(r_))).to_numpy()
+        colors = [MODEL_COLORS.get(m, "gray") for m in r_["model_family"]]
+        ax2.bar(x, scales, yerr=stds, color=colors, edgecolor="black", capsize=4)
+        for xi, s in zip(x, scales):
+            ax2.text(xi, s + 0.005, f"{s:.3f}", ha="center", fontsize=9, fontweight="bold")
+        ax2.axhline(1.0, color="black", linestyle=":", linewidth=1, label="no throttling")
+        ax2.set_xticks(x)
+        ax2.set_xticklabels([MODEL_LABELS.get(m, m) for m in r_["model_family"]],
+                            rotation=15, ha="right")
+        ax2.set_ylabel("Mean gradient scale (with std)")
+        ax2.set_title("RMGS: mean gradient scale per model", fontweight="bold")
+        ax2.legend(loc="lower right", fontsize=8)
+        ax2.set_ylim(0.5, 1.05)
+
+    plt.tight_layout()
+    save_figure(fig, out / "fig13_rl_internals")
+    print("  -> fig13_rl_internals")
+
+
+def fig14_method_radar(df: pd.DataFrame, out: Path) -> None:
+    """F14: Per-model radar of method signatures across 5 dimensions.
+
+    Axes: forgetting↓, ppl_b↓, lambada↑, rep4↓, throughput↑.
+    All normalized to [0, 1] within model. Each method = one polygon.
+    """
+    families = [f for f in MODEL_ORDER if f in df["model_family"].values]
+    metrics = [
+        ("forgetting_pct", "Forget↓", True),
+        ("ppl_b_after", "PPL_B↓", True),
+        ("lambada_after", "LAMBADA↑", False),
+        ("rep4_after", "Rep4↓", True),
+        ("avg_tokens_per_sec", "Tok/s↑", False),
+    ]
+    n = len(families)
+    fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4.5),
+                             subplot_kw=dict(polar=True))
+    if n == 1:
+        axes = [axes]
+
+    angles = np.linspace(0, 2 * np.pi, len(metrics), endpoint=False).tolist()
+    angles += angles[:1]
+
+    for ax, family in zip(axes, families):
+        sub = df[df["model_family"] == family]
+        if sub.empty:
+            continue
+        # Normalize each metric within model to [0, 1] where 1 = good
+        normed = {}
+        for col, _label, lower_is_better in metrics:
+            vals = sub[col].to_numpy(dtype=float)
+            if np.isnan(vals).all():
+                normed[col] = np.zeros_like(vals)
+                continue
+            vmin, vmax = np.nanmin(vals), np.nanmax(vals)
+            if vmax - vmin < 1e-9:
+                normed[col] = np.ones_like(vals) * 0.5
+            else:
+                z = (vals - vmin) / (vmax - vmin)
+                normed[col] = 1.0 - z if lower_is_better else z
+
+        for i, (_, r) in enumerate(sub.iterrows()):
+            vals = [normed[col][i] for col, _, _ in metrics]
+            vals += vals[:1]
+            ax.plot(angles, vals, color=METHOD_COLORS.get(r["method"], "gray"),
+                    linewidth=2, label=METHOD_LABELS.get(r["method"], r["method"]))
+            ax.fill(angles, vals, color=METHOD_COLORS.get(r["method"], "gray"),
+                    alpha=0.10)
+
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels([m[1] for m in metrics], fontsize=9)
+        ax.set_yticklabels([])
+        ax.set_title(MODEL_LABELS[family], fontweight="bold", pad=18)
+
+    # One shared legend at the bottom
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=min(6, len(labels)),
+               bbox_to_anchor=(0.5, -0.04), fontsize=9)
+    fig.suptitle("Method Signatures per Model (radar; outer = better)",
+                 fontweight="bold", y=1.04)
+    plt.tight_layout()
+    save_figure(fig, out / "fig14_method_radar")
+    print("  -> fig14_method_radar")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -746,6 +1238,11 @@ def main():
     table3_method_vs_baseline(core, tables_dir)
     table4_method_rankings(core, tables_dir)
     table5_compute(core, tables_dir)
+    table6_method_consistency(core, tables_dir)
+    table7_generation_drift(core, tables_dir)
+    table8_adaptation_ranking(core, tables_dir)
+    table9_pareto_frontier(core, tables_dir)
+    table10_rl_internals(core, tables_dir)
 
     # Figures
     print("\nGenerating figures...")
@@ -757,6 +1254,12 @@ def main():
     fig6_lambada_retention(core, figures_dir)
     fig7_compute_scaling(core, figures_dir)
     fig8_dashboard(core, figures_dir)
+    fig9_method_consistency(core, figures_dir)
+    fig10_pareto_frontier(core, figures_dir)
+    fig11_rep4_change_heatmap(core, figures_dir)
+    fig12_retention_adaptation_pareto(core, figures_dir)
+    fig13_rl_internals(core, figures_dir)
+    fig14_method_radar(core, figures_dir)
 
     # Summary
     print("\n" + "=" * 70)

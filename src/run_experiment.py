@@ -682,10 +682,12 @@ class ExperimentRunner:
             if rl_stats is not None:
                 self.results["rl_method_stats"] = rl_stats
 
-            # Check for anomalies (None-safe)
-            rep4_after = self.results["metrics"].get("rep4_after")
-            if rep4_after is not None and rep4_after > 0.25:
-                self.results["anomalies"].append("high_rep4")
+            # Check for anomalies (None-safe).
+            # high_rep4 retired 2026-05-09: an absolute threshold of 0.25 on
+            # rep4_after fired on baselines for every full-scale non-GPT-2
+            # model (a domain/tokenizer artifact, not a real anomaly). The
+            # flag conveyed no information that distinguished broken runs
+            # from working ones.
             peak_vram = resource_stats.get("peak_vram_gb")
             if peak_vram is not None and peak_vram > 7.5:
                 self.results["anomalies"].append("oom_recovery")

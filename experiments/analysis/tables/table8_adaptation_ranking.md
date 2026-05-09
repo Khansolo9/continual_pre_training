@@ -1,0 +1,35 @@
+# Table 8: Adaptation Ranking by PPL_B (lower is better)
+
+A method that minimises forgetting but doesn't learn Domain B is not actually useful. This table ranks by Domain B PPL after CPT.
+
+| Model        |   Rank (PPL_B) | Method        |   PPL_B after |   PPL_A after |   Forget % |
+|:-------------|---------------:|:--------------|--------------:|--------------:|-----------:|
+| GPT-2 (124M) |              1 | Baseline      |         21.17 |         42.84 |      86.68 |
+| GPT-2 (124M) |              2 | Baseline      |         21.17 |         42.87 |      86.95 |
+| GPT-2 (124M) |              3 | Baseline      |         21.17 |         43    |      87.35 |
+| GPT-2 (124M) |              4 | Replay-25%    |         22.06 |         24.64 |       7.48 |
+| GPT-2 (124M) |              5 | EWC           |         22.08 |         30.6  |      33.44 |
+| GPT-2 (124M) |              6 | Bandit Replay |         22.09 |         24.6  |       7.27 |
+| GPT-2 (124M) |              7 | MER-lite      |         26.77 |         23.95 |       4.47 |
+| GPT-2 (124M) |              8 | RMGS          |         27.36 |         28.67 |      25.02 |
+| Qwen3 (0.6B) |              1 | Replay-25%    |         11.13 |         20.86 |      44.3  |
+| Qwen3 (0.6B) |              2 | Baseline      |         11.13 |         20.89 |      44.52 |
+| Qwen3 (0.6B) |              3 | Baseline      |         11.14 |         20.88 |      44.49 |
+| Qwen3 (0.6B) |              4 | Bandit Replay |         11.31 |         15.96 |      10.39 |
+| Qwen3 (0.6B) |              5 | EWC           |         11.58 |         16.3  |      12.79 |
+| Qwen3 (0.6B) |              6 | MER-lite      |         12.41 |         18.28 |      26.46 |
+| Qwen3 (0.6B) |              7 | RMGS          |         13.58 |         17.12 |      18.44 |
+| Gemma3 (1B)  |              1 | Replay-25%    |         10.7  |         15.64 |      46.24 |
+| Gemma3 (1B)  |              2 | Baseline      |         10.7  |         15.6  |      45.91 |
+| Gemma3 (1B)  |              3 | Baseline      |         10.71 |         15.56 |      45.7  |
+| Gemma3 (1B)  |              4 | EWC           |         10.85 |         11.64 |       8.85 |
+| Gemma3 (1B)  |              5 | Bandit Replay |         10.87 |         13.9  |      30.07 |
+| Gemma3 (1B)  |              6 | MER-lite      |         11.69 |         13.19 |      23.42 |
+| Gemma3 (1B)  |              7 | RMGS          |         12.47 |         12.57 |      17.56 |
+| Llama3 (1B)  |              1 | Baseline      |          9.77 |         14.55 |      43.39 |
+| Llama3 (1B)  |              2 | Baseline      |          9.78 |         14.85 |      46.3  |
+| Llama3 (1B)  |              3 | Replay-25%    |          9.78 |         15.01 |      47.8  |
+| Llama3 (1B)  |              4 | EWC           |          9.79 |         14.73 |      45.07 |
+| Llama3 (1B)  |              5 | Bandit Replay |          9.9  |         12.5  |      23.06 |
+| Llama3 (1B)  |              6 | MER-lite      |         10.54 |         12.68 |      24.95 |
+| Llama3 (1B)  |              7 | RMGS          |         11.08 |         12.26 |      20.78 |
