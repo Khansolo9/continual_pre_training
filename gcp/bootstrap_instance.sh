@@ -37,7 +37,8 @@ if ! dpkg -s python3.10-venv >/dev/null 2>&1; then
   sudo apt-get update -qq
   sudo apt-get install -y -qq python3.10-venv python3-pip
 fi
-if [[ ! -d "$PROJECT_DIR/.cpt-env" ]]; then
+if [[ ! -f "$PROJECT_DIR/.cpt-env/bin/activate" ]]; then
+  rm -rf "$PROJECT_DIR/.cpt-env"
   python3 -m venv "$PROJECT_DIR/.cpt-env"
 fi
 # shellcheck disable=SC1091
