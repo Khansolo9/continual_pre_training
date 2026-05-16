@@ -29,17 +29,19 @@ else
   cd "$PROJECT_DIR"
 fi
 
-echo "==> [2/6] Python venv"
-# The DLVM PyTorch 2.9 / Ubuntu 22.04 image ships system Python 3.10 without
-# the `venv` module — `python3 -m venv` fails with "ensurepip is not available"
-# until python3.10-venv is apt-installed. Idempotent: dpkg-skip if already on.
-if ! dpkg -s python3.10-venv >/dev/null 2>&1; then
+echo "==> [2/6] Python 3.12 + venv"
+# Project requirements.txt pins are Python 3.12 (matches laptop). DLVM
+# PyTorch 2.9 / Ubuntu 22.04 ships only Python 3.10, which can't satisfy
+# pins like contourpy==1.3.3 (requires Python >=3.11). Install 3.12 from
+# deadsnakes PPA. Idempotent.
+if ! command -v python3.12 >/dev/null 2>&1; then
+  sudo add-apt-repository -y ppa:deadsnakes/ppa
   sudo apt-get update -qq
-  sudo apt-get install -y -qq python3.10-venv python3-pip
+  sudo apt-get install -y -qq python3.12 python3.12-venv python3.12-dev
 fi
 if [[ ! -f "$PROJECT_DIR/.cpt-env/bin/activate" ]]; then
   rm -rf "$PROJECT_DIR/.cpt-env"
-  python3 -m venv "$PROJECT_DIR/.cpt-env"
+  python3.12 -m venv "$PROJECT_DIR/.cpt-env"
 fi
 # shellcheck disable=SC1091
 source "$PROJECT_DIR/.cpt-env/bin/activate"
