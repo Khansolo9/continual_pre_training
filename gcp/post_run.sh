@@ -69,11 +69,15 @@ else
 fi
 rm -f "$INSTANCE_REG" "$LAPTOP_IDS" "$NEW_ROWS"
 
-echo "==> [4/5] Regenerate summary_table.csv + summary_pack.md"
+echo "==> [4/5] Enrich registry row from metrics.json + regenerate summary table/pack"
 if [[ -d ".cpt-env" ]]; then
   # shellcheck disable=SC1091
   source .cpt-env/bin/activate
 fi
+# The runner only writes status + timestamps to the registry. Backfill the
+# metadata columns (research_question, method, seed, model_id, etc.) from
+# the run's metrics.json so cloud rows match MPS-era rows.
+python src/adhoc/enrich_registry_row.py "$RUN_ID"
 python src/adhoc/generate_summary_pack.py --write
 
 echo "==> [5/5] Git status (review before commit)"

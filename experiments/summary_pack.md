@@ -1,6 +1,6 @@
 # Experiment Summary Pack
 
-**Generated**: 2026-05-16T18:53:41Z
+**Generated**: 2026-05-16T21:37:49Z
 **Total Completed Runs**: 30
 **Scope**: 4-model x 6-method matrix; per-model breakdown below.
 
@@ -12,7 +12,7 @@
 
 **Total runs**: 30 (non-smoke, completed)
 **Model families**: GPT-2 Small (124M), Qwen3 (0.6B), Gemma 3 (1B), Llama 3.2 (1B)
-**Methods present**: , bandit_replay, baseline, ewc, mer25, replay25, rmgs
+**Methods present**: bandit_replay, baseline, ewc, mer25, replay25, rmgs
 
 ### Baseline forgetting by model
 
@@ -118,11 +118,11 @@
 
 ## Qwen3 (0.6B)
 
-*7 run(s) for this model family.*
+*8 run(s) for this model family.*
 
 ## Executive Summary
 
-**Completed Runs**: 7
+**Completed Runs**: 8
 **Methods Tested**: bandit_replay, baseline, ewc, mer25, replay25, rmgs
 **Baseline Seeds**: 2
 
@@ -131,8 +131,8 @@
 ### Key Findings
 
 - **Best Forgetting**: bandit_replay (10.39%, Δ=+34.11% vs baseline)
-- **Fastest Method**: ewc (8.71h)
-- **Highest Throughput**: ewc (750 tok/s)
+- **Fastest Method**: replay25 (3.63h)
+- **Highest Throughput**: replay25 (3809 tok/s)
 
 ## Full Comparison Table
 
@@ -145,6 +145,7 @@
 | qwen3_rq2_ewc_s42 | ewc | 42 | 12.79% | 16.30 | 11.58 | 0.394 | 0.5277 | 0.2450 | 8.71h | 750 |
 | qwen3_rq4_bandit_replay_s42 | bandit_replay | 42 | 10.39% | 15.96 | 11.31 | 0.353 | 0.2154 | 0.2713 | 8.78h | 731 |
 | qwen3_rq4_rmgs_s42 | rmgs | 42 | 18.44% | 17.12 | 13.58 | 0.417 | 0.5455 | 0.2459 | 8.94h | 716 |
+| qwen3_rq2_replay25_s42_cuda | replay25 | 42 | 14.39% | 16.54 | 11.46 | 0.366 | 0.1877 | 0.2897 | 3.63h | 3809 |
 
 ## Baseline Variance Analysis
 
@@ -171,36 +172,41 @@
 | ewc | 42 | -31.71% | -4.58 | +0.44 | +0.010 | -0.0158 | -0.0192 | -0.84h | +19 |
 | bandit_replay | 42 | -34.11% | -4.93 | +0.17 | -0.031 | -0.3281 | +0.0070 | -0.76h | -1 |
 | rmgs | 42 | -26.06% | -3.77 | +2.45 | +0.033 | +0.0020 | -0.0184 | -0.60h | -15 |
+| replay25 | 42 | -30.11% | -4.35 | +0.33 | -0.018 | -0.3557 | +0.0255 | -5.91h | +3077 |
 
 ## Pareto-Style Rankings
 
 ### Best Forgetting Reduction per Hour
-1. **bandit_replay**: 3.885%/h (Δ=+34.11% in 8.78h)
-2. **ewc**: 3.642%/h (Δ=+31.71% in 8.71h)
-3. **rmgs**: 2.915%/h (Δ=+26.06% in 8.94h)
-4. **mer25**: 1.949%/h (Δ=+18.04% in 9.26h)
-5. **replay25**: 0.019%/h (Δ=+0.20% in 10.64h)
+1. **replay25**: 8.288%/h (Δ=+30.11% in 3.63h)
+2. **bandit_replay**: 3.885%/h (Δ=+34.11% in 8.78h)
+3. **ewc**: 3.642%/h (Δ=+31.71% in 8.71h)
+4. **rmgs**: 2.915%/h (Δ=+26.06% in 8.94h)
+5. **mer25**: 1.949%/h (Δ=+18.04% in 9.26h)
+6. **replay25**: 0.019%/h (Δ=+0.20% in 10.64h)
 
 ### Best Domain A Retention (Lowest Forgetting)
 1. **bandit_replay**: 10.39%
 2. **ewc**: 12.79%
-3. **rmgs**: 18.44%
-4. **mer25**: 26.46%
-5. **replay25**: 44.30%
+3. **replay25**: 14.39%
+4. **rmgs**: 18.44%
+5. **mer25**: 26.46%
+6. **replay25**: 44.30%
 
 ### Best General Ability (LAMBADA)
 1. **rmgs**: 0.417
 2. **mer25**: 0.410
 3. **ewc**: 0.394
 4. **replay25**: 0.385
-5. **bandit_replay**: 0.353
+5. **replay25**: 0.366
+6. **bandit_replay**: 0.353
 
 ### Best Throughput
-1. **ewc**: 750 tok/s
-2. **bandit_replay**: 731 tok/s
-3. **rmgs**: 716 tok/s
-4. **mer25**: 687 tok/s
-5. **replay25**: 593 tok/s
+1. **replay25**: 3809 tok/s
+2. **ewc**: 750 tok/s
+3. **bandit_replay**: 731 tok/s
+4. **rmgs**: 716 tok/s
+5. **mer25**: 687 tok/s
+6. **replay25**: 593 tok/s
 
 ---
 
@@ -377,50 +383,6 @@
 3. **bandit_replay**: 556 tok/s
 4. **mer25**: 517 tok/s
 5. **ewc**: 326 tok/s
-
----
-
-## unknown
-
-*1 run(s) for this model family.*
-
-## Executive Summary
-
-**Completed Runs**: 1
-**Methods Tested**: 
-**Baseline Seeds**: 0
-
-
-### Key Findings
-
-
-## Full Comparison Table
-
-| Run ID | Method | Seed | Forgetting % | PPL(A) After | PPL(B) After | LAMBADA After | Rep-4 After | Drift (JS) | Total Hours | Avg Tok/s |
-|---|---|---|---|---|---|---|---|---|---|---|
-| qwen3_rq2_replay25_s42_cuda |  |  | 14.39% | 16.54 | 11.46 | 0.366 | 0.1877 | 0.2897 | 3.63h | 3809 |
-
-## Baseline Variance Analysis
-
-*No baseline runs available for variance analysis.*
-
-## Method Deltas vs Baseline Mean
-
-*No method comparisons available.*
-
-## Pareto-Style Rankings
-
-### Best Forgetting Reduction per Hour
-1. ****: -3.962%/h (Δ=-14.39% in 3.63h)
-
-### Best Domain A Retention (Lowest Forgetting)
-1. ****: 14.39%
-
-### Best General Ability (LAMBADA)
-1. ****: 0.366
-
-### Best Throughput
-1. ****: 3809 tok/s
 
 ---
 
