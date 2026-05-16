@@ -30,6 +30,13 @@ else
 fi
 
 echo "==> [2/6] Python venv"
+# The DLVM PyTorch 2.9 / Ubuntu 22.04 image ships system Python 3.10 without
+# the `venv` module — `python3 -m venv` fails with "ensurepip is not available"
+# until python3.10-venv is apt-installed. Idempotent: dpkg-skip if already on.
+if ! dpkg -s python3.10-venv >/dev/null 2>&1; then
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq python3.10-venv python3-pip
+fi
 if [[ ! -d "$PROJECT_DIR/.cpt-env" ]]; then
   python3 -m venv "$PROJECT_DIR/.cpt-env"
 fi
