@@ -483,21 +483,46 @@ class MER:
 def create_mixed_batch(
     new_batch: torch.Tensor,
     replay_buffer: ReplayBuffer,
-    replay_rate: float
+    replay_rate: float,
+    rng: Optional[random.Random] = None,
 ) -> Tuple[torch.Tensor, int, int]:
     """
     Create a mixed batch with both new and replay samples.
+
+    Replay-count rounding is stochastic and fractional (AMENDMENT-004,
+    2026-05-15). For an `expected = batch_size * replay_rate`, the realized
+    count is `floor(expected) + Bernoulli(expected - floor(expected))`. This
+    guarantees `E[n_replay] == expected` even when `batch_size * replay_rate`
+    is not integer-valued — fixing the prior `int(...)` truncation that
+    silently produced `replay_samples == 0` for the 1B configs
+    (batch_size=2, replay_rate=0.25 → int(0.5) == 0).
 
     Args:
         new_batch: New domain data of shape (batch_size, seq_len)
         replay_buffer: Buffer containing old domain samples
         replay_rate: Fraction of batch that should be replay (0.0 to 1.0)
+        rng: Optional `random.Random` instance for the fractional Bernoulli
+            draw. If None, uses the module-global `random` state. Callers
+            that need run-to-run reproducibility (the trainer) should pass
+            a seeded instance.
 
     Returns:
         Tuple of (mixed_batch, n_new, n_replay)
     """
     batch_size = new_batch.shape[0]
-    n_replay = int(batch_size * replay_rate)
+
+    expected = batch_size * replay_rate
+    n_floor = int(math.floor(expected))
+    frac = expected - n_floor
+    if frac > 0.0:
+        draw = (rng or random).random()
+        n_replay = n_floor + (1 if draw < frac else 0)
+    else:
+        n_replay = n_floor
+    # Defensive cap: replay_rate ∈ [0, 1] keeps this within bounds, but a
+    # caller-supplied rate slightly > 1 (e.g. from a bandit numerical edge)
+    # should not crash sampling.
+    n_replay = max(0, min(n_replay, batch_size))
     n_new = batch_size - n_replay
 
     if n_replay == 0 or len(replay_buffer) == 0:

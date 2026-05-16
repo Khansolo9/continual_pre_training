@@ -23,6 +23,7 @@ import os
 import time
 import json
 import math
+import random
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
@@ -568,6 +569,21 @@ class CPTTrainer:
         replay_rate = self.method_params.get("mixing_ratio_replay",
                       self.method_params.get("replay_rate", 0.25))
 
+        # Dedicated RNG for replay-fractional-rounding draws (AMENDMENT-004).
+        # Kept separate from torch's global generator so that adding the
+        # Bernoulli draw does not perturb data-shuffle / dropout streams in
+        # otherwise-identical runs. Seed precedence: explicit
+        # `replay_rng_seed` config > base seed + 1 > 43.
+        base_seed = self.config.get("seed", 42)
+        replay_rng_seed = self.config.get("replay_rng_seed", base_seed + 1)
+        replay_rng = random.Random(replay_rng_seed)
+
+        # Track nominal (configured/bandit-current) and effective (realized)
+        # replay accounting separately. The pre-AMENDMENT-004 logs only had
+        # `replay_samples` which conflated the two and silently read 0.
+        nominal_microbatches_with_replay = 0
+        sum_nominal_replay_rate = 0.0
+
         # Create dataloader for Domain B
         loader = self._create_dataloader(tokens, batch_size, seq_len)
         effective_batch = batch_size * grad_accum
@@ -642,17 +658,21 @@ class CPTTrainer:
             # Apply replay mixing if enabled (fixed-rate methods)
             if is_replay_method(self.method) and self.replay_buffer is not None:
                 input_ids, n_new, n_replay = create_mixed_batch(
-                    input_ids, self.replay_buffer, replay_rate
+                    input_ids, self.replay_buffer, replay_rate, rng=replay_rng
                 )
                 replay_samples_used += n_replay
+                sum_nominal_replay_rate += replay_rate
+                nominal_microbatches_with_replay += 1
 
             # Apply bandit-guided replay mixing (adaptive rate)
             if is_bandit_replay_method(self.method) and self.bandit is not None:
                 bandit_rate = self.bandit.get_current_rate()
                 input_ids, n_new, n_replay = create_mixed_batch(
-                    input_ids, self.replay_buffer, bandit_rate
+                    input_ids, self.replay_buffer, bandit_rate, rng=replay_rng
                 )
                 replay_samples_used += n_replay
+                sum_nominal_replay_rate += bandit_rate
+                nominal_microbatches_with_replay += 1
 
             # Forward pass
             outputs = self.model(input_ids, labels=input_ids)
@@ -764,11 +784,27 @@ class CPTTrainer:
                         log_entry["ewc_penalty"] = ewc_penalty.item() if 'ewc_penalty' in dir() else 0
                     if is_replay_method(self.method):
                         log_entry["replay_samples"] = replay_samples_used
+                        log_entry["nominal_replay_rate"] = replay_rate
+                        log_entry["effective_replay_samples"] = replay_samples_used
+                        if nominal_microbatches_with_replay > 0:
+                            log_entry["effective_replay_rate"] = (
+                                replay_samples_used
+                                / (nominal_microbatches_with_replay * batch_size)
+                            )
+                        log_entry["replay_rng_seed"] = replay_rng_seed
                     if is_mer_method(self.method):
                         log_entry["reptile_updates"] = reptile_updates
                     if is_bandit_replay_method(self.method) and self.bandit is not None:
                         log_entry["replay_rate"] = self.bandit.get_current_rate()
+                        log_entry["nominal_replay_rate"] = self.bandit.get_current_rate()
                         log_entry["replay_samples"] = replay_samples_used
+                        log_entry["effective_replay_samples"] = replay_samples_used
+                        if nominal_microbatches_with_replay > 0:
+                            log_entry["effective_replay_rate"] = (
+                                replay_samples_used
+                                / (nominal_microbatches_with_replay * batch_size)
+                            )
+                        log_entry["replay_rng_seed"] = replay_rng_seed
                     if is_rmgs_method(self.method) and self.rmgs is not None:
                         log_entry["gradient_scale"] = self.rmgs.get_scale()
                         log_entry["effective_lr"] = scheduler.get_last_lr()[0] * self.rmgs.get_scale()
@@ -829,12 +865,23 @@ class CPTTrainer:
         if is_ewc_method(self.method):
             stats["total_ewc_penalty"] = total_ewc_penalty
             stats["avg_ewc_penalty"] = total_ewc_penalty / global_step if global_step > 0 else 0
-        if is_replay_method(self.method):
+        # Replay accounting (AMENDMENT-004): nominal = configured/scheduled rate;
+        # effective = realized samples / total slots. The two diverge whenever
+        # batch_size * rate is non-integer, in which case stochastic rounding
+        # produces an integer per microbatch whose long-run mean equals
+        # the nominal rate.
+        if is_replay_method(self.method) or is_bandit_replay_method(self.method):
             stats["replay_samples_used"] = replay_samples_used
+            stats["effective_replay_samples"] = replay_samples_used
+            stats["replay_rng_seed"] = replay_rng_seed
+            if nominal_microbatches_with_replay > 0:
+                stats["nominal_replay_rate_mean"] = (
+                    sum_nominal_replay_rate / nominal_microbatches_with_replay
+                )
+                total_slots = nominal_microbatches_with_replay * batch_size
+                stats["effective_replay_rate"] = replay_samples_used / total_slots
         if is_mer_method(self.method):
             stats["reptile_updates"] = reptile_updates
-        if is_bandit_replay_method(self.method):
-            stats["replay_samples_used"] = replay_samples_used
         if is_rmgs_method(self.method):
             self._domain_b_final_loss = stats["final_loss"]
 
