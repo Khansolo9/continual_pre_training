@@ -69,6 +69,19 @@ METRIC_NAMES = {
     "avg_tokens_per_sec": "Avg Tok/s",
 }
 
+# Anomaly flags that have been retired and should be filtered at load time.
+# See docs/PROJECT_STATUS.md (2026-05-09) for retirement rationale.
+RETIRED_ANOMALIES = {"high_rep4"}
+
+# Stable display order for model families.
+MODEL_FAMILY_ORDER = ["gpt2", "qwen3", "gemma3", "llama3"]
+MODEL_FAMILY_DISPLAY = {
+    "gpt2": "GPT-2 Small (124M)",
+    "qwen3": "Qwen3 (0.6B)",
+    "gemma3": "Gemma 3 (1B)",
+    "llama3": "Llama 3.2 (1B)",
+}
+
 
 def is_smoke_run(reg: Dict[str, str]) -> bool:
     """
@@ -106,6 +119,11 @@ def load_metrics(metrics_path: Path) -> Dict[str, Any]:
     for section in required_sections:
         if section not in data:
             raise ValueError(f"Missing required section '{section}' in {metrics_path}")
+
+    # Filter retired anomaly flags (frozen metrics.json files keep them for audit;
+    # the summary pack should reflect the current controlled vocabulary).
+    if "anomalies" in data and isinstance(data["anomalies"], list):
+        data["anomalies"] = [a for a in data["anomalies"] if a not in RETIRED_ANOMALIES]
 
     return data
 
@@ -515,6 +533,84 @@ def generate_appendix(runs_data: List[Tuple[Dict[str, str], Dict[str, Any]]]) ->
     return "\n".join(lines)
 
 
+def group_by_model_family(
+    runs_data: List[Tuple[Dict[str, str], Dict[str, Any]]]
+) -> Dict[str, List[Tuple[Dict[str, str], Dict[str, Any]]]]:
+    """Group runs by registry's model_family column."""
+    groups: Dict[str, List[Tuple[Dict[str, str], Dict[str, Any]]]] = {}
+    for reg, data in runs_data:
+        family = reg.get("model_family", "unknown") or "unknown"
+        groups.setdefault(family, []).append((reg, data))
+    return groups
+
+
+def generate_global_overview(
+    runs_data: List[Tuple[Dict[str, str], Dict[str, Any]]],
+    grouped: Dict[str, List[Tuple[Dict[str, str], Dict[str, Any]]]]
+) -> str:
+    """Generate the cross-model overview section."""
+    lines = []
+    lines.append("## Cross-Model Overview")
+    lines.append("")
+
+    methods = sorted({reg.get("method", "unknown") for reg, _ in runs_data})
+    lines.append(f"**Total runs**: {len(runs_data)} (non-smoke, completed)")
+    lines.append(f"**Model families**: {', '.join(MODEL_FAMILY_DISPLAY.get(f, f) for f in MODEL_FAMILY_ORDER if f in grouped)}")
+    lines.append(f"**Methods present**: {', '.join(methods)}")
+    lines.append("")
+
+    # Per-model baseline forgetting at a glance
+    lines.append("### Baseline forgetting by model")
+    lines.append("")
+    lines.append("| Model | n | Mean Forgetting | Std | Min | Max |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
+    for family in MODEL_FAMILY_ORDER:
+        if family not in grouped:
+            continue
+        baselines = [data for reg, data in grouped[family] if reg.get("method") == "baseline"]
+        if not baselines:
+            continue
+        stats = compute_baseline_stats(baselines)
+        fg = stats.get("forgetting_pct")
+        if not fg:
+            continue
+        lines.append(
+            f"| {MODEL_FAMILY_DISPLAY.get(family, family)} | {fg['n']} | "
+            f"{fg['mean']:.2f}% | {fg['std']:.2f} | {fg['min']:.2f}% | {fg['max']:.2f}% |"
+        )
+    lines.append("")
+
+    lines.append("> Per-model breakdowns follow. For figures, full tables (T1–T10), and "
+                 "synthesized analysis, see `docs/reports/ANALYSIS_ATLAS.md` and "
+                 "`experiments/analysis/{tables,figures}/`.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def generate_per_model_section(
+    family: str,
+    family_runs: List[Tuple[Dict[str, str], Dict[str, Any]]]
+) -> str:
+    """Generate a per-model subsection covering all standard analyses."""
+    lines = []
+    display = MODEL_FAMILY_DISPLAY.get(family, family)
+    lines.append(f"## {display}")
+    lines.append("")
+    lines.append(f"*{len(family_runs)} run(s) for this model family.*")
+    lines.append("")
+
+    baseline_runs = [data for reg, data in family_runs if reg.get("method") == "baseline"]
+    baseline_stats = compute_baseline_stats(baseline_runs)
+
+    lines.append(generate_executive_summary(family_runs, baseline_stats))
+    lines.append(generate_comparison_table(family_runs))
+    lines.append(generate_baseline_variance(baseline_stats))
+    lines.append(generate_method_deltas(family_runs, baseline_stats))
+    lines.append(generate_pareto_ranking(family_runs, baseline_stats))
+
+    return "\n".join(lines)
+
+
 def generate_summary_pack(runs_data: List[Tuple[Dict[str, str], Dict[str, Any]]]) -> str:
     """Generate the complete summary_pack.md content."""
     lines = []
@@ -524,33 +620,45 @@ def generate_summary_pack(runs_data: List[Tuple[Dict[str, str], Dict[str, Any]]]
     lines.append("")
     lines.append(f"**Generated**: {datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}")
     lines.append(f"**Total Completed Runs**: {len(runs_data)}")
+    lines.append(f"**Scope**: 4-model x 6-method matrix; per-model breakdown below.")
+    lines.append("")
+    lines.append("> Authoritative cross-model synthesis with figures lives in "
+                 "`docs/reports/ANALYSIS_ATLAS.md` and `experiments/analysis/`. "
+                 "This pack is a flat machine-friendly companion (paired with "
+                 "`experiments/summary_table.csv`) regenerated from `experiments/run_registry.csv` + per-run `metrics.json`.")
     lines.append("")
     lines.append("---")
     lines.append("")
 
-    # Compute baseline stats
-    baseline_runs = [data for reg, data in runs_data if reg.get("method") == "baseline"]
-    baseline_stats = compute_baseline_stats(baseline_runs)
+    grouped = group_by_model_family(runs_data)
 
-    # Sections
-    lines.append(generate_executive_summary(runs_data, baseline_stats))
+    # Cross-model overview
+    lines.append(generate_global_overview(runs_data, grouped))
     lines.append("---")
     lines.append("")
-    lines.append(generate_comparison_table(runs_data))
-    lines.append("---")
-    lines.append("")
-    lines.append(generate_baseline_variance(baseline_stats))
-    lines.append("---")
-    lines.append("")
-    lines.append(generate_method_deltas(runs_data, baseline_stats))
-    lines.append("---")
-    lines.append("")
-    lines.append(generate_pareto_ranking(runs_data, baseline_stats))
-    lines.append("---")
-    lines.append("")
+
+    # Per-model sections in stable order
+    seen = set()
+    for family in MODEL_FAMILY_ORDER:
+        if family in grouped:
+            lines.append(generate_per_model_section(family, grouped[family]))
+            lines.append("---")
+            lines.append("")
+            seen.add(family)
+    # Catch any model_family the registry has but the order list does not
+    for family, runs in grouped.items():
+        if family in seen:
+            continue
+        lines.append(generate_per_model_section(family, runs))
+        lines.append("---")
+        lines.append("")
+
+    # Anomalies (cross-model; retired flags already filtered at load time)
     lines.append(generate_anomalies_section(runs_data))
     lines.append("---")
     lines.append("")
+
+    # Appendix (artifact paths, all runs)
     lines.append(generate_appendix(runs_data))
 
     return "\n".join(lines)
