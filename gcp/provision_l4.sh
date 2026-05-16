@@ -24,10 +24,10 @@ DISK_SIZE_GB="${DISK_SIZE_GB:-150}"
 
 if [[ "${ON_DEMAND:-0}" == "1" ]]; then
   PROV_FLAGS=( )
-  echo "Provisioning ON-DEMAND L4 ($0.40/hr — use only for EWC profiling smokes)..."
+  echo 'Provisioning ON-DEMAND L4 (~$0.40/hr — use only for EWC profiling smokes)...'
 else
   PROV_FLAGS=( --provisioning-model=SPOT --instance-termination-action=STOP )
-  echo "Provisioning SPOT L4 ($0.10/hr)..."
+  echo 'Provisioning SPOT L4 (~$0.10/hr)...'
 fi
 
 gcloud compute instances create "$NAME" \
