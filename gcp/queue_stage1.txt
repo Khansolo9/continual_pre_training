@@ -1,0 +1,9 @@
+# Stage 1 remaining cells (run #1 qwen3_rq2_replay25_s42_cuda already complete).
+# Format: <run_id>  <method_config>  <model_config>  <seed>
+# Order: smallest model first (qwen3 0.6B), then the two 1B models. Within
+# each model, replay25 before mer25 (cheaper to debug if anything fails).
+qwen3_rq2_mer25_s42_cuda      configs/methods/mer25.yaml     configs/models/qwen3_0.6b.yaml   42
+gemma3_rq2_replay25_s42_cuda  configs/methods/replay25.yaml  configs/models/gemma3_1b.yaml    42
+gemma3_rq2_mer25_s42_cuda     configs/methods/mer25.yaml     configs/models/gemma3_1b.yaml    42
+llama3_rq2_replay25_s42_cuda  configs/methods/replay25.yaml  configs/models/llama3.2_1b.yaml  42
+llama3_rq2_mer25_s42_cuda     configs/methods/mer25.yaml     configs/models/llama3.2_1b.yaml  42
