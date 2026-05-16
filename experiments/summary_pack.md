@@ -1,7 +1,7 @@
 # Experiment Summary Pack
 
-**Generated**: 2026-05-09T20:37:34Z
-**Total Completed Runs**: 29
+**Generated**: 2026-05-16T18:53:41Z
+**Total Completed Runs**: 30
 **Scope**: 4-model x 6-method matrix; per-model breakdown below.
 
 > Authoritative cross-model synthesis with figures lives in `docs/reports/ANALYSIS_ATLAS.md` and `experiments/analysis/`. This pack is a flat machine-friendly companion (paired with `experiments/summary_table.csv`) regenerated from `experiments/run_registry.csv` + per-run `metrics.json`.
@@ -10,9 +10,9 @@
 
 ## Cross-Model Overview
 
-**Total runs**: 29 (non-smoke, completed)
+**Total runs**: 30 (non-smoke, completed)
 **Model families**: GPT-2 Small (124M), Qwen3 (0.6B), Gemma 3 (1B), Llama 3.2 (1B)
-**Methods present**: bandit_replay, baseline, ewc, mer25, replay25, rmgs
+**Methods present**: , bandit_replay, baseline, ewc, mer25, replay25, rmgs
 
 ### Baseline forgetting by model
 
@@ -380,9 +380,55 @@
 
 ---
 
+## unknown
+
+*1 run(s) for this model family.*
+
+## Executive Summary
+
+**Completed Runs**: 1
+**Methods Tested**: 
+**Baseline Seeds**: 0
+
+
+### Key Findings
+
+
+## Full Comparison Table
+
+| Run ID | Method | Seed | Forgetting % | PPL(A) After | PPL(B) After | LAMBADA After | Rep-4 After | Drift (JS) | Total Hours | Avg Tok/s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3_rq2_replay25_s42_cuda |  |  | 14.39% | 16.54 | 11.46 | 0.366 | 0.1877 | 0.2897 | 3.63h | 3809 |
+
+## Baseline Variance Analysis
+
+*No baseline runs available for variance analysis.*
+
+## Method Deltas vs Baseline Mean
+
+*No method comparisons available.*
+
+## Pareto-Style Rankings
+
+### Best Forgetting Reduction per Hour
+1. ****: -3.962%/h (Δ=-14.39% in 3.63h)
+
+### Best Domain A Retention (Lowest Forgetting)
+1. ****: 14.39%
+
+### Best General Ability (LAMBADA)
+1. ****: 0.366
+
+### Best Throughput
+1. ****: 3809 tok/s
+
+---
+
 ## Anomalies Summary
 
-*No anomalies detected across all runs.*
+| Anomaly | Count | Affected Runs |
+|---------|-------|---------------|
+| oom_recovery | 1 | qwen3_rq2_replay25_s42_cuda |
 
 ---
 
@@ -677,3 +723,13 @@
   - `experiments/runs/llama3_rq4_rmgs_s42/checkpoints/theta_A.pt`
   - `experiments/runs/llama3_rq4_rmgs_s42/checkpoints/theta_AB.pt`
 - **Training Log**: `experiments/runs/llama3_rq4_rmgs_s42/training_log.jsonl`
+
+### qwen3_rq2_replay25_s42_cuda
+
+- **Metrics**: `experiments/runs/qwen3_rq2_replay25_s42_cuda/metrics.json`
+- **Runpack**: `experiments/runs/qwen3_rq2_replay25_s42_cuda/runpack_qwen3_rq2_replay25_s42_cuda.md`
+- **Config**: `experiments/runs/qwen3_rq2_replay25_s42_cuda/config.yaml`
+- **Checkpoints**:
+  - `experiments/runs/qwen3_rq2_replay25_s42_cuda/checkpoints/theta_A.pt`
+  - `experiments/runs/qwen3_rq2_replay25_s42_cuda/checkpoints/theta_AB.pt`
+- **Training Log**: `experiments/runs/qwen3_rq2_replay25_s42_cuda/training_log.jsonl`
